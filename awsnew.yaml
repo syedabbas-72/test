@@ -1,636 +1,92 @@
-
-AWSTemplateFormatVersion: 2010-09-09
-
-# This CloudFormation template deploys a basic VPC / Network.  Specifically:
-# It deploys a VPC with 1 to 6 subnets 3 Availability Zones depending on parameter selection.
-# User has the choice of public subnets or private + public subnets in each AZ.
-# When private subnets are created, NATing is provided by either an EC2 instance or NAT Gateway based on user selection.
-# The VPC and subnets are exported for use by other stacks.
-
+AWSTemplateFormatVersion: '2010-09-09'
 Metadata: 
-  # Control the UI display when running this template from the AWS Management Console:
-  AWS::CloudFormation::Interface: 
-    ParameterGroups: 
-      - Label: 
-          default: "VPC Network Configuration"
-        Parameters: 
-          - NumberOfAZs
-          - PrivateSubnets
-          - NATType
-      - Label: 
-          default: "EC2 Configuration"
-        Parameters: 
-          - InstanceType
-          - AMI
-          - OperatorEMail
-          - KeyName
-          - SSHLocation
-
+  License: Apache-2.0
+Description: 'AWS CloudFormation Sample Template S3_Website_With_CloudFront_Distribution:
+  Sample template showing how to create a website with a custom DNS name, hosted on
+  Amazon S3 and served via Amazone CloudFront. It assumes you already have a Hosted
+  Zone registered with Amazon Route 53. **WARNING** This template creates an Amazon
+  Route 53 DNS record, an S3 bucket and a CloudFront distribution. You will be billed
+  for the AWS resources used if you create a stack from this template.'
 Parameters:
-  PrivateSubnets:
+  HostedZone:
     Type: String
-    AllowedValues: 
-    - True
-    - False
-    Default: True
-    Description: Do you want to create private subnets in addition to public subnets?
-
-  NumberOfAZs:
-    Type: Number
-    AllowedValues: 
-    - 1
-    - 2
-    - 3
-    Default: 2
-    Description:  How many Availability Zones do you wish to utilize?
-
-  NATType:
-    Type: String
-    AllowedValues:
-    - "EC2 NAT Instance"
-    - "NAT Gateway"
-    Default:  "NAT Gateway"
-    Description:  What type of NAT to use for private instances to communicate with the internet.  A single EC2 instance can be used as a NAT, or you can use the AWS NAT Gateway (managed, scalable, more expensive).  This setting will be IGNORED if you do not build private subnets.
-
-  InstanceType:
-    Description: WebServer EC2 instance type
-    Type: String
-    Default: t2.small
-    AllowedValues: [a1.2xlarge, a1.4xlarge, a1.large, a1.medium, a1.metal, a1.xlarge, c1.medium, c1.xlarge, c3.2xlarge, c3.4xlarge, c3.8xlarge, c3.large, c3.xlarge, c4.2xlarge, c4.4xlarge, c4.8xlarge, c4.large, c4.xlarge, c5.12xlarge, c5.18xlarge, c5.24xlarge, c5.2xlarge, c5.4xlarge, c5.9xlarge, c5.large, c5.metal, c5.xlarge, c5a.12xlarge, c5a.16xlarge, c5a.24xlarge, c5a.2xlarge, c5a.4xlarge, c5a.8xlarge, c5a.large, c5a.xlarge, c5ad.12xlarge, c5ad.16xlarge, c5ad.24xlarge, c5ad.2xlarge, c5ad.4xlarge, c5ad.8xlarge, c5ad.large, c5ad.xlarge, c5d.12xlarge, c5d.18xlarge, c5d.24xlarge, c5d.2xlarge, c5d.4xlarge, c5d.9xlarge, c5d.large, c5d.metal, c5d.xlarge, c5n.18xlarge, c5n.2xlarge, c5n.4xlarge, c5n.9xlarge, c5n.large, c5n.metal, c5n.xlarge, c6g.12xlarge, c6g.16xlarge, c6g.2xlarge, c6g.4xlarge, c6g.8xlarge, c6g.large, c6g.medium, c6g.metal, c6g.xlarge, c6gd.12xlarge, c6gd.16xlarge, c6gd.2xlarge, c6gd.4xlarge, c6gd.8xlarge, c6gd.large, c6gd.medium, c6gd.metal, c6gd.xlarge, c6gn.12xlarge, c6gn.16xlarge, c6gn.2xlarge, c6gn.4xlarge, c6gn.8xlarge, c6gn.large, c6gn.medium, c6gn.xlarge, cc1.4xlarge, cc2.8xlarge, cg1.4xlarge, cr1.8xlarge, d2.2xlarge, d2.4xlarge, d2.8xlarge, d2.xlarge, d3.2xlarge, d3.4xlarge, d3.8xlarge, d3.xlarge, d3en.12xlarge, d3en.2xlarge, d3en.4xlarge, d3en.6xlarge, d3en.8xlarge, d3en.xlarge, f1.16xlarge, f1.2xlarge, f1.4xlarge, g2.2xlarge, g2.8xlarge, g3.16xlarge, g3.4xlarge, g3.8xlarge, g3s.xlarge, g4ad.16xlarge, g4ad.4xlarge, g4ad.8xlarge, g4dn.12xlarge, g4dn.16xlarge, g4dn.2xlarge, g4dn.4xlarge, g4dn.8xlarge, g4dn.metal, g4dn.xlarge, h1.16xlarge, h1.2xlarge, h1.4xlarge, h1.8xlarge, hi1.4xlarge, hs1.8xlarge, i2.2xlarge, i2.4xlarge, i2.8xlarge, i2.xlarge, i3.16xlarge, i3.2xlarge, i3.4xlarge, i3.8xlarge, i3.large, i3.metal, i3.xlarge, i3en.12xlarge, i3en.24xlarge, i3en.2xlarge, i3en.3xlarge, i3en.6xlarge, i3en.large, i3en.metal, i3en.xlarge, inf1.24xlarge, inf1.2xlarge, inf1.6xlarge, inf1.xlarge, m1.large, m1.medium, m1.small, m1.xlarge, m2.2xlarge, m2.4xlarge, m2.xlarge, m3.2xlarge, m3.large, m3.medium, m3.xlarge, m4.10xlarge, m4.16xlarge, m4.2xlarge, m4.4xlarge, m4.large, m4.xlarge, m5.12xlarge, m5.16xlarge, m5.24xlarge, m5.2xlarge, m5.4xlarge, m5.8xlarge, m5.large, m5.metal, m5.xlarge, m5a.12xlarge, m5a.16xlarge, m5a.24xlarge, m5a.2xlarge, m5a.4xlarge, m5a.8xlarge, m5a.large, m5a.xlarge, m5ad.12xlarge, m5ad.16xlarge, m5ad.24xlarge, m5ad.2xlarge, m5ad.4xlarge, m5ad.8xlarge, m5ad.large, m5ad.xlarge, m5d.12xlarge, m5d.16xlarge, m5d.24xlarge, m5d.2xlarge, m5d.4xlarge, m5d.8xlarge, m5d.large, m5d.metal, m5d.xlarge, m5dn.12xlarge, m5dn.16xlarge, m5dn.24xlarge, m5dn.2xlarge, m5dn.4xlarge, m5dn.8xlarge, m5dn.large, m5dn.xlarge, m5n.12xlarge, m5n.16xlarge, m5n.24xlarge, m5n.2xlarge, m5n.4xlarge, m5n.8xlarge, m5n.large, m5n.xlarge, m5zn.12xlarge, m5zn.2xlarge, m5zn.3xlarge, m5zn.6xlarge, m5zn.large, m5zn.metal, m5zn.xlarge, m6g.12xlarge, m6g.16xlarge, m6g.2xlarge, m6g.4xlarge, m6g.8xlarge, m6g.large, m6g.medium, m6g.metal, m6g.xlarge, m6gd.12xlarge, m6gd.16xlarge, m6gd.2xlarge, m6gd.4xlarge, m6gd.8xlarge, m6gd.large, m6gd.medium, m6gd.metal, m6gd.xlarge, mac1.metal, p2.16xlarge, p2.8xlarge, p2.xlarge, p3.16xlarge, p3.2xlarge, p3.8xlarge, p3dn.24xlarge, p4d.24xlarge, r3.2xlarge, r3.4xlarge, r3.8xlarge, r3.large, r3.xlarge, r4.16xlarge, r4.2xlarge, r4.4xlarge, r4.8xlarge, r4.large, r4.xlarge, r5.12xlarge, r5.16xlarge, r5.24xlarge, r5.2xlarge, r5.4xlarge, r5.8xlarge, r5.large, r5.metal, r5.xlarge, r5a.12xlarge, r5a.16xlarge, r5a.24xlarge, r5a.2xlarge, r5a.4xlarge, r5a.8xlarge, r5a.large, r5a.xlarge, r5ad.12xlarge, r5ad.16xlarge, r5ad.24xlarge, r5ad.2xlarge, r5ad.4xlarge, r5ad.8xlarge, r5ad.large, r5ad.xlarge, r5b.12xlarge, r5b.16xlarge, r5b.24xlarge, r5b.2xlarge, r5b.4xlarge, r5b.8xlarge, r5b.large, r5b.metal, r5b.xlarge, r5d.12xlarge, r5d.16xlarge, r5d.24xlarge, r5d.2xlarge, r5d.4xlarge, r5d.8xlarge, r5d.large, r5d.metal, r5d.xlarge, r5dn.12xlarge, r5dn.16xlarge, r5dn.24xlarge, r5dn.2xlarge, r5dn.4xlarge, r5dn.8xlarge, r5dn.large, r5dn.xlarge, r5n.12xlarge, r5n.16xlarge, r5n.24xlarge, r5n.2xlarge, r5n.4xlarge, r5n.8xlarge, r5n.large, r5n.xlarge, r6g.12xlarge, r6g.16xlarge, r6g.2xlarge, r6g.4xlarge, r6g.8xlarge, r6g.large, r6g.medium, r6g.metal, r6g.xlarge, r6gd.12xlarge, r6gd.16xlarge, r6gd.2xlarge, r6gd.4xlarge, r6gd.8xlarge, r6gd.large, r6gd.medium, r6gd.metal, r6gd.xlarge, t1.micro, t2.2xlarge, t2.large, t2.medium, t2.micro, t2.nano, t2.small, t2.xlarge, t3.2xlarge, t3.large, t3.medium, t3.micro, t3.nano, t3.small, t3.xlarge, t3a.2xlarge, t3a.large, t3a.medium, t3a.micro, t3a.nano, t3a.small, t3a.xlarge, t4g.2xlarge, t4g.large, t4g.medium, t4g.micro, t4g.nano, t4g.small, t4g.xlarge, u-12tb1.112xlarge, u-12tb1.metal, u-18tb1.metal, u-24tb1.metal, u-6tb1.112xlarge, u-6tb1.56xlarge, u-6tb1.metal, u-9tb1.112xlarge, u-9tb1.metal, x1.16xlarge, x1.32xlarge, x1e.16xlarge, x1e.2xlarge, x1e.32xlarge, x1e.4xlarge, x1e.8xlarge, x1e.xlarge, x2gd.12xlarge, x2gd.16xlarge, x2gd.2xlarge, x2gd.4xlarge, x2gd.8xlarge, x2gd.large, x2gd.medium, x2gd.metal, x2gd.xlarge, z1d.12xlarge, z1d.2xlarge, z1d.3xlarge, z1d.6xlarge, z1d.large, z1d.metal, z1d.xlarge]
-    ConstraintDescription: must be a valid EC2 instance type.
-
-  AMI:
-    Type: String
-    Default: ami-08f3d892de259504d
-    Description: The Linux AMI to use.
-
-  OperatorEMail:
-    Description: EMail address to notify if there are any scaling operations
-    Type: String
-    AllowedPattern: ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)
-    ConstraintDescription: must be a valid email address.
-
-  KeyName:
-    Description: The EC2 Key Pair to allow SSH access to the instances
-    Type: AWS::EC2::KeyPair::KeyName
-    ConstraintDescription: must be the name of an existing EC2 KeyPair.
-
-  SSHLocation:
-    Description: The IP address range that can be used to SSH to the EC2 instances
-    Type: String
-    MinLength: 9
-    MaxLength: 18
-    Default: 0.0.0.0/0
-    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
-    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
-
-Conditions:
-  BuildPublicB:         !Not [ !Equals [ !Ref NumberOfAZs, 1 ]]  
-  BuildPublicC:         !Equals [ !Ref NumberOfAZs, 3 ]  
-  BuildPrivateSubnets:  !Equals [ !Ref PrivateSubnets, True ] 
-  BuildPrivateA:        !Equals [ !Ref PrivateSubnets, True ]       # Can't determine how to build a condition from a separate single condition
-  BuildPrivateB:        !And [ Condition: BuildPrivateSubnets, Condition: BuildPublicB ]
-  BuildPrivateC:        !And [ Condition: BuildPrivateSubnets, Condition: BuildPublicC ]
-  BuildNATGateway:      !And [ Condition: BuildPrivateSubnets, !Equals [ !Ref NATType, "NAT Gateway" ] ]
-  BuildNATInstance:     !And [ Condition: BuildPrivateSubnets, !Equals [ !Ref NATType, "EC2 NAT Instance" ] ]
-
+    Description: The DNS name of an existing Amazon Route 53 hosted zone
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
+    ConstraintDescription: must be a valid DNS zone name.
 Mappings:
-  #  This is the Amazon Linux 2 AMI.  Adjust these values as needed, they can change a few times per year:
-  AmazonLinuxAMI:
-    'af-south-1':
-      AMI: 'ami-0438616cef15ba2ca'
-    'eu-north-1':
-      AMI: 'ami-0eb6f319b31f7092d'
-    'ap-south-1':
-      AMI: 'ami-08e0ca9924195beba'
-    'eu-west-3':
-      AMI: 'ami-0ea4a063871686f37'
-    'eu-west-2':
-      AMI: 'ami-098828924dc89ea4a'
-    'eu-south-1':
-      AMI: 'ami-0ea288dd7bb5b0251'
-    'eu-west-1':
-      AMI: 'ami-0fc970315c2d38f01'
-    'ap-northeast-2':
-      AMI: 'ami-09282971cf2faa4c9'
-    'me-south-1':
-      AMI: 'ami-0cc4f2b06b56d27e9'
-    'ap-northeast-1':
-      AMI: 'ami-0992fc94ca0f1415a'
-    'sa-east-1':
-      AMI: 'ami-089aac6323aa08aee'
-    'ca-central-1':
-      AMI: 'ami-075cfad2d9805c5f2'
-    'ap-east-1':
-      AMI: 'ami-040f64b9a031d8eb0'
-    'ap-southeast-1':
-      AMI: 'ami-0e2e44c03b85f58b3'
-    'ap-southeast-2':
-      AMI: 'ami-04f77aa5970939148'
-    'eu-central-1':
-      AMI: 'ami-0a6dc7529cd559185'
-    'us-east-1':
-      AMI: 'ami-047a51fa27710816e'
-    'us-east-2':
-      AMI: 'ami-01aab85a5e4a5a0fe'
-    'us-west-1':
-      AMI: 'ami-005c06c6de69aee84'
-    'us-west-2':
-      AMI: 'ami-0e999cbd62129e3b1'
-  Region2Examples:
+  Region2S3WebsiteSuffix:
     us-east-1:
-      Examples: https://s3.amazonaws.com/cloudformation-examples-us-east-1
-    us-west-2:
-      Examples: https://s3-us-west-2.amazonaws.com/cloudformation-examples-us-west-2
+      Suffix: .s3-website-us-east-1.amazonaws.com
     us-west-1:
-      Examples: https://s3-us-west-1.amazonaws.com/cloudformation-examples-us-west-1
+      Suffix: .s3-website-us-west-1.amazonaws.com
+    us-west-2:
+      Suffix: .s3-website-us-west-2.amazonaws.com
     eu-west-1:
-      Examples: https://s3-eu-west-1.amazonaws.com/cloudformation-examples-eu-west-1
-    eu-central-1:
-      Examples: https://s3-eu-central-1.amazonaws.com/cloudformation-examples-eu-central-1
-    ap-southeast-1:
-      Examples: https://s3-ap-southeast-1.amazonaws.com/cloudformation-examples-ap-southeast-1
+      Suffix: .s3-website-eu-west-1.amazonaws.com
     ap-northeast-1:
-      Examples: https://s3-ap-northeast-1.amazonaws.com/cloudformation-examples-ap-northeast-1
+      Suffix: .s3-website-ap-northeast-1.amazonaws.com
     ap-northeast-2:
-      Examples: https://s3-ap-northeast-2.amazonaws.com/cloudformation-examples-ap-northeast-2
+      Suffix: .s3-website-ap-northeast-2.amazonaws.com
+    ap-southeast-1:
+      Suffix: .s3-website-ap-southeast-1.amazonaws.com
     ap-southeast-2:
-      Examples: https://s3-ap-southeast-2.amazonaws.com/cloudformation-examples-ap-southeast-2
+      Suffix: .s3-website-ap-southeast-2.amazonaws.com
     ap-south-1:
-      Examples: https://s3-ap-south-1.amazonaws.com/cloudformation-examples-ap-south-1
+      Suffix: .s3-website-ap-south-1.amazonaws.com
     us-east-2:
-      Examples: https://s3-us-east-2.amazonaws.com/cloudformation-examples-us-east-2
+      Suffix: .s3-website-us-east-2.amazonaws.com
     sa-east-1:
-      Examples: https://s3-sa-east-1.amazonaws.com/cloudformation-examples-sa-east-1
+      Suffix: .s3-website-sa-east-1.amazonaws.com
     cn-north-1:
-      Examples: https://s3.cn-north-1.amazonaws.com.cn/cloudformation-examples-cn-north-1
+      Suffix: .s3-website.cn-north-1.amazonaws.com.cn
+    eu-central-1:
+      Suffix: .s3-website.eu-central-1.amazonaws.com
 Resources:
-
-  # First, a VPC:
-  VPC:
-    Type: AWS::EC2::VPC
+  S3BucketForWebsiteContent:
+    Type: AWS::S3::Bucket
     Properties:
-      CidrBlock: 10.1.0.0/16
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-VPC
-
-  # Our VPC will need internet access:      
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    DependsOn: VPC
-  AttachGateway:
-    Type: AWS::EC2::VPCGatewayAttachment
-    # Notice how you can't attach an IGW to a VPC unless both are created:
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+  WebsiteCDN:
+    Type: AWS::CloudFront::Distribution
     Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
-
-  # Now some subnets, 3 public:
-  PublicSubnetA:
-    Type: AWS::EC2::Subnet
+      DistributionConfig:
+        Comment: CDN for S3-backed website
+        Aliases:
+        - !Join ['', [!Ref 'AWS::StackName', !Ref 'AWS::AccountId', ., !Ref 'AWS::Region',
+            ., !Ref 'HostedZone']]
+        Enabled: 'true'
+        DefaultCacheBehavior:
+          ForwardedValues:
+            QueryString: 'true'
+          TargetOriginId: only-origin
+          ViewerProtocolPolicy: allow-all
+        DefaultRootObject: index.html
+        Origins:
+        - CustomOriginConfig:
+            HTTPPort: '80'
+            HTTPSPort: '443'
+            OriginProtocolPolicy: http-only
+          DomainName: !Join ['', [!Ref 'S3BucketForWebsiteContent', !FindInMap [Region2S3WebsiteSuffix,
+                !Ref 'AWS::Region', Suffix]]]
+          Id: only-origin
+  WebsiteDNSName:
+    Type: AWS::Route53::RecordSet
     Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.10.0/24
-      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Public-A
-  PublicSubnetB:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPublicB
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.20.0/24
-      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Public-B
-  PublicSubnetC:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPublicC
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.30.0/24
-      AvailabilityZone: !Select [ 2, !GetAZs ]    # Get the third AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Public-C
-
-  # Now some subnets, 3 private:
-  PrivateSubnetA:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPrivateA
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.50.0/24
-      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Private-A
-  PrivateSubnetB:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPrivateB
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.60.0/24
-      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Private-B
-  PrivateSubnetC:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPrivateC
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.70.0/24
-      AvailabilityZone: !Select [ 2, !GetAZs ]    # Get the third AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Private-C
-        
-  # Some public route tables for our subnets:        
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: Public
-  PublicRoute1:   # Public route table has direct routing to IGW:
-    Type: AWS::EC2::Route
-    DependsOn: AttachGateway
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-      
-  # Here is a private route table:
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Condition: BuildPrivateSubnets
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: Private
-  PrivateRoute1:            # Private route table can access web via NAT (created below)
-    Type: AWS::EC2::Route
-    Condition: BuildPrivateSubnets
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      # If we are using a NAT Instance, route traffic through the NAT Instance:
-      InstanceId:   !If [ BuildNATInstance, !Ref NATInstance, !Ref "AWS::NoValue" ]
-      # Otherwise if we are using a NAT Gateway, route traffic through the NAT Gateway:
-      NatGatewayId: !If [ BuildNATGateway, !Ref NATGateway, !Ref "AWS::NoValue" ]
-
-  # Attach the public subnets to public route tables, 
-  PublicSubnetARouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnetA
-      RouteTableId: !Ref PublicRouteTable
-  PublicSubnetBRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPublicB
-    Properties:
-      SubnetId: !Ref PublicSubnetB
-      RouteTableId: !Ref PublicRouteTable
-  PublicSubnetCRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPublicC
-    Properties:
-      SubnetId: !Ref PublicSubnetC
-      RouteTableId: !Ref PublicRouteTable
-
-  # and attach the private subnets to private route tables:
-  PrivateSubnetARouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPrivateA
-    Properties:
-      SubnetId: !Ref PrivateSubnetA
-      RouteTableId: !Ref PrivateRouteTable
-  PrivateSubnetBRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPrivateB
-    Properties:
-      SubnetId: !Ref PrivateSubnetB
-      RouteTableId: !Ref PrivateRouteTable
-  PrivateSubnetCRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPrivateC
-    Properties:
-      SubnetId: !Ref PrivateSubnetC
-      RouteTableId: !Ref PrivateRouteTable
-
-  # A security group for our NAT.  Ingress from the VPC IPs only.  Egress is TCP & UDP only:
-  NATSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Condition: BuildNATInstance
-    DependsOn: AttachGateway
-    Properties:
-      GroupName: !Sub NATSecurityGroup-${AWS::StackName}
-      GroupDescription: Enable internal access to the NAT device
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: '0'
-        ToPort: '1024'
-        CidrIp: !GetAtt VPC.CidrBlock
-      SecurityGroupEgress:
-      - IpProtocol: tcp
-        FromPort: '0'
-        ToPort: '65535'
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: udp
-        FromPort: '0'
-        ToPort: '65535'
-        CidrIp: 0.0.0.0/0
-
-# A NAT Instance will be built and used if the user selected Private subnets and specified an EC2 instance over a managed Gateway.  
-  NATInstance:
-    Type: AWS::EC2::Instance
-    Condition: BuildNATInstance
-    DependsOn: PublicRoute1                                           # Must have route to IGW established.
-    Properties:
-      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup the AMI from the Region Map
-      InstanceType: t2.small                                          # Any instance type is fine
-      NetworkInterfaces:
-      - DeviceIndex: '0'
-        SubnetId: !Ref PublicSubnetA                                  # Any public subnet is fine
-        AssociatePublicIpAddress: true                                # We will definitely need a public IP address
-        GroupSet: [!Ref NATSecurityGroup]                             # Plug in the security group
-      SourceDestCheck: false                                          # NATs don't work if EC2 tries the match source addresses with destinations.
-      Tags:
-      - Key: Name
-        Value: !Sub NAT-${AWS::StackName}
-      UserData:      #  This code is NAT code.  Look at how the last line signals the wait condition:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum -y update
-          yum install -y aws-cfn-bootstrap
-          echo 1 > /proc/sys/net/ipv4/ip_forward
-          echo 0 > /proc/sys/net/ipv4/conf/eth0/send_redirects
-          /sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE
-          /sbin/iptables-save > /etc/sysconfig/iptables
-          mkdir -p /etc/sysctl.d/
-          cat << NatConfFileMarker > /etc/sysctl.d/nat.conf
-          net.ipv4.ip_forward = 1
-          net.ipv4.conf.eth0.send_redirects = 0
-          NatConfFileMarker
-          /opt/aws/bin/cfn-signal -e 0 --resource NATInstance --stack ${AWS::StackName} --region ${AWS::Region}
-    # This NATInstance is only complete when you get 1 signal back within 5 minutes'.
-    CreationPolicy:
-      ResourceSignal:
-        Count: 1
-        Timeout: PT5M
-
-  # A NAT Gateway will be built and used if the user selected Private subnets and a Gateway instead of an EC2 instance.  
-  NATGateway:
-    Type: AWS::EC2::NatGateway
-    Condition: BuildNATGateway
-    Properties: 
-      AllocationId: !GetAtt ElasticIPAddress.AllocationId
-      SubnetId: !Ref PublicSubnetA
-      Tags: 
-      - Key: Name
-        Value: !Sub NAT-${AWS::StackName}
-  ElasticIPAddress:
-    Type: AWS::EC2::EIP
-    Condition: BuildNATGateway
-    Properties:
-      Domain: VPC
-      InstanceId: !Ref Linux
-
-  # Notifications Auto Load Balancer EC2
-  NotificationTopic:
-    Type: AWS::SNS::Topic
-    Properties:
-      Subscription:
-      - Endpoint: !Ref 'OperatorEMail'
-        Protocol: email
-  WebServerGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    Properties:
-      AvailabilityZones: !GetAZs ''
-      LaunchConfigurationName: !Ref 'LaunchConfig'
-      MinSize: '1'
-      MaxSize: '3'
-      LoadBalancerNames: [!Ref 'ElasticLoadBalancer']
-      NotificationConfigurations:
-        - TopicARN: !Ref 'NotificationTopic'
-          NotificationTypes: ['autoscaling:EC2_INSTANCE_LAUNCH', 'autoscaling:EC2_INSTANCE_LAUNCH_ERROR',
-            'autoscaling:EC2_INSTANCE_TERMINATE', 'autoscaling:EC2_INSTANCE_TERMINATE_ERROR']
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT15M
-        Count: 1
-    UpdatePolicy:
-      AutoScalingRollingUpdate:
-        MinInstancesInService: 1
-        MaxBatchSize: 1
-        PauseTime: PT15M
-        WaitOnResourceSignals: true
-  LaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Metadata:
-      Comment: Install a simple application
-      AWS::CloudFormation::Init:
-        config:
-          packages:
-            yum:
-              httpd: []
-          files:
-            /var/www/html/index.html:
-              content: !Join ['
-
-                  ', [<img src=", !FindInMap [Region2Examples, !Ref 'AWS::Region',
-                    Examples], /cloudformation_graphic.png" alt="AWS CloudFormation
-                    Logo"/>, '<h1>Congratulations, you have successfully launched
-                    the AWS CloudFormation sample.</h1>']]
-              mode: '000644'
-              owner: root
-              group: root
-            /etc/cfn/cfn-hup.conf:
-              content: !Join ['', ['[main]
-
-                    ', stack=, !Ref 'AWS::StackId', '
-
-                    ', region=, !Ref 'AWS::Region', '
-
-                    ']]
-              mode: '000400'
-              owner: root
-              group: root
-            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
-              content: !Join ['', ['[cfn-auto-reloader-hook]
-
-                    ', 'triggers=post.update
-
-                    ', 'path=Resources.LaunchConfig.Metadata.AWS::CloudFormation::Init
-
-                    ', 'action=/opt/aws/bin/cfn-init -v ', '         --stack ', !Ref 'AWS::StackName',
-                  '         --resource LaunchConfig ', '         --region ', !Ref 'AWS::Region',
-                  '
-                    ', 'runas=root
-
-                    ']]
-          services:
-            sysvinit:
-              httpd:
-                enabled: true
-                ensureRunning: true
-              cfn-hup:
-                enabled: true
-                ensureRunning: true
-                files: [/etc/cfn/cfn-hup.conf, /etc/cfn/hooks.d/cfn-auto-reloader.conf]
-    Properties:
-      KeyName: !Ref 'KeyName'
-      ImageId: !Ref AMI
-      SecurityGroups: [!Ref 'InstanceSecurityGroup']
-      InstanceType: !Ref 'InstanceType'
-      UserData: !Base64
-        Fn::Join:
-        - ''
-        - ['#!/bin/bash -xe
-
-            ', 'yum update -y aws-cfn-bootstrap
-
-            ', '/opt/aws/bin/cfn-init -v ', '         --stack ', !Ref 'AWS::StackName',
-          '         --resource LaunchConfig ', '         --region ', !Ref 'AWS::Region',
-          '
-            ', '/opt/aws/bin/cfn-signal -e $? ', '         --stack ', !Ref 'AWS::StackName',
-          '         --resource WebServerGroup ', '         --region ', !Ref 'AWS::Region',
-          '
-            ']
-  WebServerScaleUpPolicy:
-    Type: AWS::AutoScaling::ScalingPolicy
-    Properties:
-      AdjustmentType: ChangeInCapacity
-      AutoScalingGroupName: !Ref 'WebServerGroup'
-      Cooldown: '60'
-      ScalingAdjustment: 1
-  WebServerScaleDownPolicy:
-    Type: AWS::AutoScaling::ScalingPolicy
-    Properties:
-      AdjustmentType: ChangeInCapacity
-      AutoScalingGroupName: !Ref 'WebServerGroup'
-      Cooldown: '60'
-      ScalingAdjustment: -1
-  CPUAlarmHigh:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: Scale-up if CPU > 90% for 10 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 2
-      Threshold: 90
-      AlarmActions: [!Ref 'WebServerScaleUpPolicy']
-      Dimensions:
-      - Name: AutoScalingGroupName
-        Value: !Ref 'WebServerGroup'
-      ComparisonOperator: GreaterThanThreshold
-  CPUAlarmLow:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: Scale-down if CPU < 70% for 10 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 2
-      Threshold: 70
-      AlarmActions: [!Ref 'WebServerScaleDownPolicy']
-      Dimensions:
-      - Name: AutoScalingGroupName
-        Value: !Ref 'WebServerGroup'
-      ComparisonOperator: LessThanThreshold
-  ElasticLoadBalancer:
-    Type: AWS::ElasticLoadBalancing::LoadBalancer
-    Properties:
-      AvailabilityZones: !GetAZs ''
-      CrossZone: true
-      Listeners:
-      - LoadBalancerPort: '80'
-        InstancePort: '80'
-        Protocol: HTTP
-      HealthCheck:
-        Target: HTTP:80/
-        HealthyThreshold: '3'
-        UnhealthyThreshold: '5'
-        Interval: '30'
-        Timeout: '5'
-  InstanceSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Enable SSH access and HTTP from the load balancer only
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: !Ref 'SSHLocation'
-      - IpProtocol: tcp
-        FromPort: 80
-        ToPort: 80
-        SourceSecurityGroupOwnerId: !GetAtt [ElasticLoadBalancer, SourceSecurityGroup.OwnerAlias]
-        SourceSecurityGroupName: !GetAtt [ElasticLoadBalancer, SourceSecurityGroup.GroupName]
-
+      HostedZoneName: !Join ['', [!Ref 'HostedZone', .]]
+      Comment: CNAME redirect custom name to CloudFront distribution
+      Name: !Join ['', [!Ref 'AWS::StackName', !Ref 'AWS::AccountId', ., !Ref 'AWS::Region',
+          ., !Ref 'HostedZone']]
+      Type: CNAME
+      TTL: '900'
+      ResourceRecords:
+      - !GetAtt [WebsiteCDN, DomainName]
 Outputs:
-  VPC:
-    Description: VPC of the base network
-    Value: !Ref VPC
-    Export:
-      Name: !Sub ${AWS::StackName}-VPC
-  PublicSubnetA:
-    Description: First Public Subnet
-    Value: !Ref PublicSubnetA
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicSubnetA
-  PublicSubnetB:
-    Description: Second Public Subnet
-    Condition: BuildPublicB
-    Value: !Ref PublicSubnetB
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicSubnetB
-  PublicSubnetC:
-    Description: Third Public Subnet
-    Condition: BuildPublicC
-    Value: !Ref PublicSubnetC
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicSubnetC
-  PrivateSubnetA:
-    Condition: BuildPrivateSubnets
-    Description: First Private Subnet
-    Value: !Ref PrivateSubnetA
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateSubnetA
-  PrivateSubnetB:
-    Condition: BuildPrivateB
-    Description: Second Private Subnet
-    Value: !Ref PrivateSubnetB
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateSubnetB
-  PrivateSubnetC:
-    Condition: BuildPrivateC
-    Description: Third Private Subnet
-    Value: !Ref PrivateSubnetC
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateSubnetC
-  ElasticIPAllocationID:
-    Condition: BuildNATGateway
-    Value : !GetAtt ElasticIPAddress.AllocationId
-    Export:
-      Name: 'ElasticIPAddress::AllocationId'
-  ElasticIPAddress:
-    Condition: BuildNATGateway
-    Value: !Ref ElasticIPAddress
-    Export:
-      Name: 'ElasticIPAddress::Address'
-  URL:
-    Description: The URL of the website
-    Value: !Join ['', ['http://', !GetAtt [ElasticLoadBalancer, DNSName]]]
+  WebsiteURL:
+    Value: !Join ['', ['http://', !Ref 'WebsiteDNSName']]
+    Description: The URL of the newly created website
+  BucketName:
+    Value: !Ref 'S3BucketForWebsiteContent'
+    Description: Name of S3 bucket to hold website content
