@@ -1,381 +1,527 @@
-
-AWSTemplateFormatVersion: 2010-09-09
-
-# This CloudFormation template deploys a basic VPC / Network.  Specifically:
-# It deploys a VPC with 1 to 6 subnets 3 Availability Zones depending on parameter selection.
-# User has the choice of public subnets or private + public subnets in each AZ.
-# When private subnets are created, NATing is provided by either an EC2 instance or NAT Gateway based on user selection.
-# The VPC and subnets are exported for use by other stacks.
-
-Metadata: 
-  # Control the UI display when running this template from the AWS Management Console:
-  AWS::CloudFormation::Interface: 
-    ParameterGroups: 
-      - Label: 
-          default: "Network Configuration"
-        Parameters: 
-          - NumberOfAZs
-          - PrivateSubnets
-          - NATType
-
+AWSTemplateFormatVersion: '2010-09-09'
+Description: '  This CloudFormation template deploys a basic VPC / Network.'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'CloudTrail Parameters'
+      Parameters:
+      - ParentAlertStack
+      - CloudWatchLogsRetentionInDays
+      - ExternalTrailBucket
+      - LogFilePrefix
+      - S3DataEvents
+    - Label:
+        default: 'Permission Parameters'
+      Parameters:
+      - PermissionsBoundary
 Parameters:
-  PrivateSubnets:
+  ParentAlertStack:
+    Description: 'Optional but recommended stack name of parent alert stack based on operations/alert.yaml template.'
     Type: String
-    AllowedValues: 
-    - True
-    - False
-    Default: True
-    Description: Do you want to create private subnets in addition to public subnets?
-
-  NumberOfAZs:
+    Default: ''
+  PermissionsBoundary:
+    Description: 'Optional ARN for a policy that will be used as the permission boundary for all roles created by this template.'
+    Type: String
+    Default: ''
+  CloudWatchLogsRetentionInDays:
+    Description: 'The number of days log events are kept in CloudWatch Logs'
     Type: Number
-    AllowedValues: 
-    - 1
-    - 2
-    - 3
-    Default: 2
-    Description:  How many Availability Zones do you wish to utilize?
-
-  NATType:
+    Default: 14
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
+  ExternalTrailBucket:
+    Description: 'Optional The name of the Amazon S3 bucket where CloudTrail publishes log files. If you leave this empty, the Amazon S3 bucket is created for you.'
     Type: String
+    Default: ''
+  LogFilePrefix:
+    Description: 'Optional The log file prefix.'
+    Type: String
+    Default: ''
+  S3DataEvents:
+    Description: 'Record data events of all S3 buckets? (Warning: additional charges apply.)'
+    Type: String
+    Default: 'false'
     AllowedValues:
-    - "EC2 NAT Instance"
-    - "NAT Gateway"
-    Default:  "NAT Gateway"
-    Description:  What type of NAT to use for private instances to communicate with the internet.  A single EC2 instance can be used as a NAT, or you can use the AWS NAT Gateway (managed, scalable, more expensive).  This setting will be IGNORED if you do not build private subnets.
-
+    - 'true'
+    - 'false'
 Conditions:
-  BuildPublicB:         !Not [ !Equals [ !Ref NumberOfAZs, 1 ]]  
-  BuildPublicC:         !Equals [ !Ref NumberOfAZs, 3 ]  
-  BuildPrivateSubnets:  !Equals [ !Ref PrivateSubnets, True ] 
-  BuildPrivateA:        !Equals [ !Ref PrivateSubnets, True ]       # Can't determine how to build a condition from a separate single condition
-  BuildPrivateB:        !And [ Condition: BuildPrivateSubnets, Condition: BuildPublicB ]
-  BuildPrivateC:        !And [ Condition: BuildPrivateSubnets, Condition: BuildPublicC ]
-  BuildNATGateway:      !And [ Condition: BuildPrivateSubnets, !Equals [ !Ref NATType, "NAT Gateway" ] ]
-  BuildNATInstance:     !And [ Condition: BuildPrivateSubnets, !Equals [ !Ref NATType, "EC2 NAT Instance" ] ]
-
-Mappings:
-  #  This is the Amazon Linux 2 AMI.  Adjust these values as needed, they can change a few times per year:
-  AmazonLinuxAMI:
-    'af-south-1':
-      AMI: 'ami-0438616cef15ba2ca'
-    'eu-north-1':
-      AMI: 'ami-0eb6f319b31f7092d'
-    'ap-south-1':
-      AMI: 'ami-08e0ca9924195beba'
-    'eu-west-3':
-      AMI: 'ami-0ea4a063871686f37'
-    'eu-west-2':
-      AMI: 'ami-098828924dc89ea4a'
-    'eu-south-1':
-      AMI: 'ami-0ea288dd7bb5b0251'
-    'eu-west-1':
-      AMI: 'ami-0fc970315c2d38f01'
-    'ap-northeast-2':
-      AMI: 'ami-09282971cf2faa4c9'
-    'me-south-1':
-      AMI: 'ami-0cc4f2b06b56d27e9'
-    'ap-northeast-1':
-      AMI: 'ami-0992fc94ca0f1415a'
-    'sa-east-1':
-      AMI: 'ami-089aac6323aa08aee'
-    'ca-central-1':
-      AMI: 'ami-075cfad2d9805c5f2'
-    'ap-east-1':
-      AMI: 'ami-040f64b9a031d8eb0'
-    'ap-southeast-1':
-      AMI: 'ami-0e2e44c03b85f58b3'
-    'ap-southeast-2':
-      AMI: 'ami-04f77aa5970939148'
-    'eu-central-1':
-      AMI: 'ami-0a6dc7529cd559185'
-    'us-east-1':
-      AMI: 'ami-047a51fa27710816e'
-    'us-east-2':
-      AMI: 'ami-01aab85a5e4a5a0fe'
-    'us-west-1':
-      AMI: 'ami-005c06c6de69aee84'
-    'us-west-2':
-      AMI: 'ami-0e999cbd62129e3b1'
-
+  HasAlertTopic: !Not [!Equals [!Ref ParentAlertStack, '']]
+  HasPermissionsBoundary: !Not [!Equals [!Ref PermissionsBoundary, '']]
+  InternalBucket: !Equals [!Ref ExternalTrailBucket, '']
+  ExternalBucket: !Not [!Equals [!Ref ExternalTrailBucket, '']]
+  HasLogFilePrefix: !Not [!Equals [!Ref LogFilePrefix, '']]
+  IsS3DataEvents: !Equals [!Ref S3DataEvents, 'true']
 Resources:
-
-  # First, a VPC:
-  VPC:
-    Type: AWS::EC2::VPC
+  TrailBucket:
+    Condition: InternalBucket
+    Type: 'AWS::S3::Bucket'
+    Properties: {}
+  TrailBucketPolicy:
+    Condition: InternalBucket
+    Type: 'AWS::S3::BucketPolicy'
     Properties:
-      CidrBlock: 10.1.0.0/16
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-VPC
-
-  # Our VPC will need internet access:      
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    DependsOn: VPC
-  AttachGateway:
-    Type: AWS::EC2::VPCGatewayAttachment
-    # Notice how you can't attach an IGW to a VPC unless both are created:
+      Bucket: !Ref TrailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: AWSCloudTrailAclCheck
+          Effect: Allow
+          Principal:
+            Service: 'cloudtrail.amazonaws.com'
+          Action: 's3:GetBucketAcl'
+          Resource: !Sub 'arn:aws:s3:::${TrailBucket}'
+        - Sid: AWSCloudTrailWrite
+          Effect: Allow
+          Principal:
+            Service: 'cloudtrail.amazonaws.com'
+          Action: 's3:PutObject'
+          Resource: !If [HasLogFilePrefix, !Sub 'arn:aws:s3:::${TrailBucket}/${LogFilePrefix}/AWSLogs/${AWS::AccountId}/*', !Sub 'arn:aws:s3:::${TrailBucket}/AWSLogs/${AWS::AccountId}/*']
+          Condition:
+            StringEquals:
+              's3:x-amz-acl': 'bucket-owner-full-control'
+        - Sid: AllowSSLRequestsOnly # AWS Foundational Security Best Practices v1.0.0 S3.5
+          Effect: Deny
+          Principal: '*'
+          Action: 's3:*'
+          Resource:
+          - !GetAtt 'TrailBucket.Arn'
+          - !Sub '${TrailBucket.Arn}/*'
+          Condition:
+            Bool:
+              'aws:SecureTransport': false
+  TrailLogGroup:
+    Type: 'AWS::Logs::LogGroup'
     Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
-
-  # Now some subnets, 3 public:
-  PublicSubnetA:
-    Type: AWS::EC2::Subnet
+      RetentionInDays: !Ref CloudWatchLogsRetentionInDays
+  TrailLogGroupRole:
+    Type: 'AWS::IAM::Role'
     Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.10.0/24
-      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Public-A
-  PublicSubnetB:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPublicB
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: AssumeRole1
+          Effect: Allow
+          Principal:
+            Service: 'cloudtrail.amazonaws.com'
+          Action: 'sts:AssumeRole'
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundary, !Ref 'AWS::NoValue']
+      Policies:
+      - PolicyName: 'cloudtrail-policy'
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'logs:CreateLogStream'
+            - 'logs:PutLogEvents'
+            Resource: !GetAtt 'TrailLogGroup.Arn'
+  TrailTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties: {}
+  TrailTopicPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
     Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.20.0/24
-      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Public-B
-  PublicSubnetC:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPublicC
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: AWSCloudTrailSNSPolicy
+          Effect: Allow
+          Principal:
+            Service: 'cloudtrail.amazonaws.com'
+          Resource: !Ref TrailTopic
+          Action: 'sns:Publish'
+      Topics:
+      - !Ref TrailTopic
+  Trail:
+    Condition: InternalBucket
+    DependsOn:
+    - TrailBucketPolicy
+    - TrailTopicPolicy
+    Type: 'AWS::CloudTrail::Trail'
     Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.30.0/24
-      AvailabilityZone: !Select [ 2, !GetAZs ]    # Get the third AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Public-C
-
-  # Now some subnets, 3 private:
-  PrivateSubnetA:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPrivateA
+      IncludeGlobalServiceEvents: true
+      IsLogging: true
+      IsMultiRegionTrail: true
+      EventSelectors: !If [IsS3DataEvents, [{DataResources: [{Type: 'AWS::S3::Object', Values: ['arn:aws:s3:::']}], IncludeManagementEvents: true, ReadWriteType: All}], !Ref 'AWS::NoValue']
+      S3BucketName: !Ref TrailBucket
+      S3KeyPrefix: !Ref LogFilePrefix
+      EnableLogFileValidation: true
+      CloudWatchLogsLogGroupArn: !GetAtt 'TrailLogGroup.Arn'
+      CloudWatchLogsRoleArn: !GetAtt 'TrailLogGroupRole.Arn'
+      SnsTopicName: !GetAtt 'TrailTopic.TopicName'
+  ExternalTrail:
+    Condition: ExternalBucket
+    DependsOn:
+    - TrailTopicPolicy
+    Type: 'AWS::CloudTrail::Trail'
     Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.50.0/24
-      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Private-A
-  PrivateSubnetB:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPrivateB
+      IncludeGlobalServiceEvents: true
+      IsLogging: true
+      IsMultiRegionTrail: true
+      EventSelectors: !If [IsS3DataEvents, [{DataResources: [{Type: 'AWS::S3::Object', Values: ['arn:aws:s3:::']}], IncludeManagementEvents: true, ReadWriteType: All}], !Ref 'AWS::NoValue']
+      S3BucketName: !Ref ExternalTrailBucket
+      S3KeyPrefix: !Ref LogFilePrefix
+      EnableLogFileValidation: true
+      CloudWatchLogsLogGroupArn: !GetAtt 'TrailLogGroup.Arn'
+      CloudWatchLogsRoleArn: !GetAtt 'TrailLogGroupRole.Arn'
+      SnsTopicName: !GetAtt 'TrailTopic.TopicName'
+  UnauthorizedOperationMetricFilter: # CIS 3.1
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
     Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.60.0/24
-      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Private-B
-  PrivateSubnetC:
-    Type: AWS::EC2::Subnet
-    Condition: BuildPrivateC
+      FilterPattern: '{($.errorCode = "*UnauthorizedOperation") || ($.errorCode = "AccessDenied*")}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'UnauthorizedOperationCount'
+  UnauthorizedOperationAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
     Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.1.70.0/24
-      AvailabilityZone: !Select [ 2, !GetAZs ]    # Get the third AZ in the list  
-      Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-Private-C
-        
-  # Some public route tables for our subnets:        
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
+      AlarmDescription: 'CloudTrail: unauthorized API calls detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: UnauthorizedOperationCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  NonMfaConsoleLoginMetricFilter: # CIS 3.2
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
     Properties:
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: Public
-  PublicRoute1:   # Public route table has direct routing to IGW:
-    Type: AWS::EC2::Route
-    DependsOn: AttachGateway
+      FilterPattern: '{($.eventName = "ConsoleLogin") && ($.additionalEventData.MFAUsed != "Yes")}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'NonMfaConsoleLoginCount'
+  NonMfaConsoleLoginAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
     Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-      
-  # Here is a private route table:
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Condition: BuildPrivateSubnets
+      AlarmDescription: 'CloudTrail: Management Console sign-in without MFA detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: NonMfaConsoleLoginCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  RootUserActivityMetricFilter: # CIS 1.1 & 3.3
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
     Properties:
-      VpcId: !Ref VPC
-      Tags:
-      - Key: Name
-        Value: Private
-  PrivateRoute1:            # Private route table can access web via NAT (created below)
-    Type: AWS::EC2::Route
-    Condition: BuildPrivateSubnets
+      FilterPattern: '{$.userIdentity.type = "Root" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != "AwsServiceEvent"}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'RootUserActivityCount'
+  RootUserActivityAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
     Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      # If we are using a NAT Instance, route traffic through the NAT Instance:
-      InstanceId:   !If [ BuildNATInstance, !Ref NATInstance, !Ref "AWS::NoValue" ]
-      # Otherwise if we are using a NAT Gateway, route traffic through the NAT Gateway:
-      NatGatewayId: !If [ BuildNATGateway, !Ref NATGateway, !Ref "AWS::NoValue" ]
-
-  # Attach the public subnets to public route tables, 
-  PublicSubnetARouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
+      AlarmDescription: 'CloudTrail: usage of root account/user detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: RootUserActivityCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  IamPolicyChangeMetricFilter: # CIS 3.4
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
     Properties:
-      SubnetId: !Ref PublicSubnetA
-      RouteTableId: !Ref PublicRouteTable
-  PublicSubnetBRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPublicB
+      FilterPattern: '{($.eventName=DeleteGroupPolicy) || ($.eventName=DeleteRolePolicy) || ($.eventName=DeleteUserPolicy) || ($.eventName=PutGroupPolicy) || ($.eventName=PutRolePolicy) || ($.eventName=PutUserPolicy) || ($.eventName=CreatePolicy) || ($.eventName=DeletePolicy) || ($.eventName=CreatePolicyVersion) || ($.eventName=DeletePolicyVersion) || ($.eventName=AttachRolePolicy) || ($.eventName=DetachRolePolicy) || ($.eventName=AttachUserPolicy) || ($.eventName=DetachUserPolicy) || ($.eventName=AttachGroupPolicy) || ($.eventName=DetachGroupPolicy)}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'IamPolicyChangeCount'
+  IamPolicyChangeAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
     Properties:
-      SubnetId: !Ref PublicSubnetB
-      RouteTableId: !Ref PublicRouteTable
-  PublicSubnetCRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPublicC
+      AlarmDescription: 'CloudTrail: IAM policy changes detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: IamPolicyChangeCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  CloudTrailConfigChangeMetricFilter: # CIS 3.5
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
     Properties:
-      SubnetId: !Ref PublicSubnetC
-      RouteTableId: !Ref PublicRouteTable
-
-  # and attach the private subnets to private route tables:
-  PrivateSubnetARouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPrivateA
+      FilterPattern: '{($.eventName = CreateTrail) || ($.eventName = UpdateTrail) || ($.eventName = DeleteTrail) || ($.eventName = StartLogging) || ($.eventName = StopLogging)}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'CloudTrailConfigChangeCount'
+  CloudTrailConfigChangeAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
     Properties:
-      SubnetId: !Ref PrivateSubnetA
-      RouteTableId: !Ref PrivateRouteTable
-  PrivateSubnetBRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPrivateB
+      AlarmDescription: 'CloudTrail: CloudTrail configuration changes detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: CloudTrailConfigChangeCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  ManagementConsoleAuthFailureMetricFilter: # CIS 3.6
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
     Properties:
-      SubnetId: !Ref PrivateSubnetB
-      RouteTableId: !Ref PrivateRouteTable
-  PrivateSubnetCRouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: BuildPrivateC
+      FilterPattern: '{($.eventName = ConsoleLogin) && ($.errorMessage = "Failed authentication")}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'ManagementConsoleAuthFailureCount'
+  ManagementConsoleAuthFailureAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
     Properties:
-      SubnetId: !Ref PrivateSubnetC
-      RouteTableId: !Ref PrivateRouteTable
-
-  # A security group for our NAT.  Ingress from the VPC IPs only.  Egress is TCP & UDP only:
-  NATSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Condition: BuildNATInstance
-    DependsOn: AttachGateway
+      AlarmDescription: 'CloudTrail: Management Console authentication failures detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: ManagementConsoleAuthFailureCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  DeletingKmsCmkMetricFilter: # CIS 3.7
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
     Properties:
-      GroupName: !Sub NATSecurityGroup-${AWS::StackName}
-      GroupDescription: Enable internal access to the NAT device
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: '0'
-        ToPort: '1024'
-        CidrIp: !GetAtt VPC.CidrBlock
-      SecurityGroupEgress:
-      - IpProtocol: tcp
-        FromPort: '0'
-        ToPort: '65535'
-        CidrIp: 0.0.0.0/0
-      - IpProtocol: udp
-        FromPort: '0'
-        ToPort: '65535'
-        CidrIp: 0.0.0.0/0
-
-# A NAT Instance will be built and used if the user selected Private subnets and specified an EC2 instance over a managed Gateway.  
-  NATInstance:
-    Type: AWS::EC2::Instance
-    Condition: BuildNATInstance
-    DependsOn: PublicRoute1                                           # Must have route to IGW established.
+      FilterPattern: '{($.eventSource = kms.amazonaws.com) && (($.eventName=DisableKey) || ($.eventName=ScheduleKeyDeletion))}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'DeletingKmsCmkCount'
+  DeletingKmsCmkAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
     Properties:
-      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup the AMI from the Region Map
-      InstanceType: t2.small                                          # Any instance type is fine
-      NetworkInterfaces:
-      - DeviceIndex: '0'
-        SubnetId: !Ref PublicSubnetA                                  # Any public subnet is fine
-        AssociatePublicIpAddress: true                                # We will definitely need a public IP address
-        GroupSet: [!Ref NATSecurityGroup]                             # Plug in the security group
-      SourceDestCheck: false                                          # NATs don't work if EC2 tries the match source addresses with destinations.
-      Tags:
-      - Key: Name
-        Value: !Sub NAT-${AWS::StackName}
-      UserData:      #  This code is NAT code.  Look at how the last line signals the wait condition:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum -y update
-          yum install -y aws-cfn-bootstrap
-          echo 1 > /proc/sys/net/ipv4/ip_forward
-          echo 0 > /proc/sys/net/ipv4/conf/eth0/send_redirects
-          /sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE
-          /sbin/iptables-save > /etc/sysconfig/iptables
-          mkdir -p /etc/sysctl.d/
-          cat << NatConfFileMarker > /etc/sysctl.d/nat.conf
-          net.ipv4.ip_forward = 1
-          net.ipv4.conf.eth0.send_redirects = 0
-          NatConfFileMarker
-          /opt/aws/bin/cfn-signal -e 0 --resource NATInstance --stack ${AWS::StackName} --region ${AWS::Region}
-    # This NATInstance is only complete when you get 1 signal back within 5 minutes'.
-    CreationPolicy:
-      ResourceSignal:
-        Count: 1
-        Timeout: PT5M
-
-  # A NAT Gateway will be built and used if the user selected Private subnets and a Gateway instead of an EC2 instance.  
-  NATGateway:
-    Type: AWS::EC2::NatGateway
-    Condition: BuildNATGateway
-    Properties: 
-      AllocationId: !GetAtt ElasticIPAddress.AllocationId
-      SubnetId: !Ref PublicSubnetA
-      Tags: 
-      - Key: Name
-        Value: !Sub NAT-${AWS::StackName}
-  ElasticIPAddress:
-    Type: AWS::EC2::EIP
-    Condition: BuildNATGateway
+      AlarmDescription: 'CloudTrail: disabling or scheduled deletion of customer created CMKs detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: DeletingKmsCmkCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  S3BucketPolicyChangeMetricFilter: # CIS 3.8
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
     Properties:
-      Domain: VPC
-
+      FilterPattern: '{($.eventSource = s3.amazonaws.com) && (($.eventName = PutBucketAcl) || ($.eventName = PutBucketPolicy) || ($.eventName = PutBucketCors) || ($.eventName = PutBucketLifecycle) || ($.eventName = PutBucketReplication) || ($.eventName = DeleteBucketPolicy) || ($.eventName = DeleteBucketCors) || ($.eventName = DeleteBucketLifecycle) || ($.eventName = DeleteBucketReplication))}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'S3BucketPolicyChangeCount'
+  S3BucketPolicyChangeAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: 'CloudTrail:  S3 bucket policy changes detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: S3BucketPolicyChangeCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  ConfigChangeMetricFilter: # CIS 3.9
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
+    Properties:
+      FilterPattern: '{($.eventSource = config.amazonaws.com) && (($.eventName = StopConfigurationRecorder) || ($.eventName = DeleteDeliveryChannel) || ($.eventName = PutDeliveryChannel) || ($.eventName = PutConfigurationRecorder))}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'ConfigChangeCount'
+  ConfigChangeAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: 'CloudTrail: AWS Config configuration changes detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: ConfigChangeCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  SecurityGroupChangeMetricFilter: # CIS 3.10
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
+    Properties:
+      FilterPattern: '{($.eventName = AuthorizeSecurityGroupIngress) || ($.eventName = AuthorizeSecurityGroupEgress) || ($.eventName = RevokeSecurityGroupIngress) || ($.eventName = RevokeSecurityGroupEgress) || ($.eventName = CreateSecurityGroup) || ($.eventName = DeleteSecurityGroup)}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'SecurityGroupChangeCount'
+  SecurityGroupChangeAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: 'CloudTrail: security group changes detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: SecurityGroupChangeCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  NaclChangeMetricFilter: # CIS 3.11
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
+    Properties:
+      FilterPattern: '{($.eventName = CreateNetworkAcl) || ($.eventName = CreateNetworkAclEntry) || ($.eventName = DeleteNetworkAcl) || ($.eventName = DeleteNetworkAclEntry) || ($.eventName = ReplaceNetworkAclEntry) || ($.eventName = ReplaceNetworkAclAssociation)}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'NaclChangeCount'
+  NaclChangeAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: 'CloudTrail: changes to Network Access Control List (NACL) detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: NaclChangeCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  NetworkGatewayChangeMetricFilter: # CIS 3.12
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
+    Properties:
+      FilterPattern: '{($.eventName = CreateCustomerGateway) || ($.eventName = DeleteCustomerGateway) || ($.eventName = AttachInternetGateway) || ($.eventName = CreateInternetGateway) || ($.eventName = DeleteInternetGateway) || ($.eventName = DetachInternetGateway)}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'NetworkGatewayChangeChangeCount'
+  NetworkGatewayChangeAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: 'CloudTrail: changes to network gateways detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: NetworkGatewayChangeChangeCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  RouteTableChangeMetricFilter: # CIS 3.13
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
+    Properties:
+      FilterPattern: '{($.eventName = CreateRoute) || ($.eventName = CreateRouteTable) || ($.eventName = ReplaceRoute) || ($.eventName = ReplaceRouteTableAssociation) || ($.eventName = DeleteRouteTable) || ($.eventName = DeleteRoute) || ($.eventName = DisassociateRouteTable)}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'RouteTableChangeCount'
+  RouteTableChangeAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: 'CloudTrail: changes to route tables detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: RouteTableChangeCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
+  VpcChangeMetricFilter: # CIS 3.14
+    Condition: HasAlertTopic
+    Type: 'AWS::Logs::MetricFilter'
+    Properties:
+      FilterPattern: '{($.eventName = CreateVpc) || ($.eventName = DeleteVpc) || ($.eventName = ModifyVpcAttribute) || ($.eventName = AcceptVpcPeeringConnection) || ($.eventName = CreateVpcPeeringConnection) || ($.eventName = DeleteVpcPeeringConnection) || ($.eventName = RejectVpcPeeringConnection) || ($.eventName = AttachClassicLinkVpc) || ($.eventName = DetachClassicLinkVpc) || ($.eventName = DisableVpcClassicLink) || ($.eventName = EnableVpcClassicLink)}'
+      LogGroupName: !Ref TrailLogGroup
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref 'AWS::StackName'
+        MetricName: 'VpcChangeCount'
+  VpcTableChangeAlarm:
+    Condition: HasAlertTopic
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: 'CloudTrail: changes to VPCs detected'
+      Namespace: !Ref 'AWS::StackName'
+      MetricName: VpcChangeCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+      - {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+      TreatMissingData: notBreaching
 Outputs:
-  VPC:
-    Description: VPC of the base network
-    Value: !Ref VPC
-    Export:
-      Name: !Sub ${AWS::StackName}-VPC
-  PublicSubnetA:
-    Description: First Public Subnet
-    Value: !Ref PublicSubnetA
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicSubnetA
-  PublicSubnetB:
-    Description: Second Public Subnet
-    Condition: BuildPublicB
-    Value: !Ref PublicSubnetB
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicSubnetB
-  PublicSubnetC:
-    Description: Third Public Subnet
-    Condition: BuildPublicC
-    Value: !Ref PublicSubnetC
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicSubnetC
-  PrivateSubnetA:
-    Condition: BuildPrivateSubnets
-    Description: First Private Subnet
-    Value: !Ref PrivateSubnetA
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateSubnetA
-  PrivateSubnetB:
-    Condition: BuildPrivateB
-    Description: Second Private Subnet
-    Value: !Ref PrivateSubnetB
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateSubnetB
-  PrivateSubnetC:
-    Condition: BuildPrivateC
-    Description: Third Private Subnet
-    Value: !Ref PrivateSubnetC
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateSubnetC
+  TemplateID:
+    Description: 'cloudonaut.io template id.'
+    Value: 'security/cloudtrail'
+  TemplateVersion:
+    Description: 'cloudonaut.io template version.'
+    Value: '__VERSION__'
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'
