@@ -668,13 +668,12 @@ Resources:
         DBSubnetGroupName: !Sub "${AWS::Region}-aws-database-subnet-group"
         SubnetIds: 
           - !Ref PrivateSubnetA
-          - !Ref PrivateSubnetB
         Tags: 
           - Key: Name
             Value: production-db-ap-south
   MasterDB:
     Type: AWS::RDS::DBInstance
-    DependsOn: PublicRoute1
+    DependsOn: PrivateRoute1
     Properties:
       DBName: !Ref 'DBName'
       AllocatedStorage: !Ref 'DBAllocatedStorage'
@@ -686,7 +685,6 @@ Resources:
       StorageType: gp2
       NetworkInterfaces:
       - DeviceIndex: '1'
-        SubnetId: !Ref PublicSubnetA
         AssociatePublicIpAddress: True
       Port: 3306
       DBSubnetGroupName: !Ref RDSDBSubnetGroup
