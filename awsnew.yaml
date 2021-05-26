@@ -258,6 +258,7 @@ Resources:
       VpcId: !Ref VpcId
   MySQLDatabase:
     Type: 'AWS::RDS::DBInstance'
+    DeletionPolicy: "Snapshot"
     Properties:
       Engine: MySQL
       DBName: !Ref DBName
@@ -267,7 +268,6 @@ Resources:
       DBInstanceClass: !Ref DBInstanceClass
       AllocatedStorage: !Ref DBAllocatedStorage
       StorageType: gp2
-      VpcId: !Ref VpcId
       PubliclyAccessible: True
       VPCSecurityGroups:
         - !GetAtt 
