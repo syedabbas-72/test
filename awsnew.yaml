@@ -19,7 +19,6 @@ Metadata:
         Parameters:
           - OperatorEMail
           - VpcId
-          - Subnets
       - Label:
           default: "EC2 Configuration"
         Parameters:
@@ -28,6 +27,7 @@ Metadata:
           - SSHLocation
           - WebServerCapacity
           - KeyName
+          - EC2Subnets
       - Label:
           default: "RDS Configuration"
         Parameters:
@@ -37,13 +37,14 @@ Metadata:
           - DBUser
           - DBPassword
           - MultiAZDatabase
+          - RDSSubnets
 
 Parameters:
   VpcId:
     Type: 'AWS::EC2::VPC::Id'
     Description: VpcId of your existing Virtual Private Cloud (VPC)
     ConstraintDescription: must be the VPC Id of an existing Virtual Private Cloud.
-  Subnets:
+  EC2Subnets:
     Type: 'List<AWS::EC2::Subnet::Id>'
     Description: The list of SubnetIds in your Virtual Private Cloud (VPC)
     ConstraintDescription: >-
@@ -104,6 +105,13 @@ Parameters:
       - 'true'
       - 'false'
     ConstraintDescription: must be either true or false.
+  RDSSubnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: The list of SubnetIds in your Virtual Private Cloud (VPC)
+    ConstraintDescription: >-
+      must be a list of at least two existing subnets associated with at least
+      two different availability zones. They should be residing in the selected
+      Virtual Private Cloud.
   WebServerCapacity:
     Default: '2'
     Description: The initial number of WebServer instances
@@ -134,7 +142,7 @@ Resources:
   ApplicationLoadBalancer:
     Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
     Properties:
-      Subnets: !Ref Subnets
+      Subnets: !Ref EC2Subnets
   ALBTargetGroup:
     Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
     Properties:
@@ -155,7 +163,7 @@ Resources:
   WebServerGroup:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
-      VPCZoneIdentifier: !Ref Subnets
+      VPCZoneIdentifier: !Ref EC2Subnets
       LaunchConfigurationName: !Ref LaunchConfig
       MinSize: '1'
       MaxSize: '5'
@@ -246,33 +254,41 @@ Resources:
       - Name: AutoScalingGroupName
         Value: !Ref 'WebServerGroup'
       ComparisonOperator: LessThanThreshold
-  DBEC2SecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
+  # RDS Subnet Group
+  RDSDBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
     Properties:
-      GroupDescription: Open database for access
+      DBSubnetGroupDescription: "description"
+      DBSubnetGroupName: "RDS_DB_PrivSubnet"
+      SubnetIds: !Ref EC2Subnets
+  # RDS security group inbound and outbound access
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: RDSSecurityGroup
+      VpcId: !Ref VPC
+      GroupDescription: Enable MySql access via user defined port
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: '3306'
-          ToPort: '3306'
-          SourceSecurityGroupId: !Ref WebServerSecurityGroup
-      VpcId: !Ref VpcId
+        - CidrIp: 10.0.0.0/16
+          FromPort: 3306
+          IpProtocol: tcp
+          ToPort: 3306
   MySQLDatabase:
     Type: 'AWS::RDS::DBInstance'
     DeletionPolicy: "Snapshot"
     Properties:
       Engine: MySQL
       DBName: !Ref DBName
+      StorageType: gp2
       MultiAZ: !Ref MultiAZDatabase
       MasterUsername: !Ref DBUser
       MasterUserPassword: !Ref DBPassword
       DBInstanceClass: !Ref DBInstanceClass
       AllocatedStorage: !Ref DBAllocatedStorage
-      StorageType: gp2
       PubliclyAccessible: True
+      DBSubnetGroupName: !Ref RDSDBSubnetGroup
       VPCSecurityGroups:
-        - !GetAtt 
-          - DBEC2SecurityGroup
-          - GroupId
+          - Ref: RDSSecurityGroup
   ReplicaDB:
     Type: AWS::RDS::DBInstance
     Properties:
@@ -298,3 +314,11 @@ Outputs:
         - !GetAtt 
           - ApplicationLoadBalancer
           - DNSName
+  RDSDBSubnetGroup:
+        Description: 'RDS Private Subnet Group'
+        Value:
+          Ref: 'RDSDBSubnetGroup'
+  RDSSecurityGroup:
+      Description: 'RDS Security Group'
+      Value:
+        Ref: 'RDSSecurityGroup'
