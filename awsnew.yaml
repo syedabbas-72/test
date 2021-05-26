@@ -648,30 +648,30 @@ Resources:
 
   DBEC2SecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
-        Properties:
-            GroupDescription: "Database instances security group"
-            VpcId: !Ref VPC
-            SecurityGroupIngress: 
-              - 
-                CidrIp: "*.*.*.*/32"
-                FromPort: 3306
-                IpProtocol: "tcp"
-                ToPort: 3306
-            SecurityGroupEgress: 
-              - 
-                CidrIp: "0.0.0.0/0"
-                IpProtocol: "-1"
+    Properties:
+      GroupDescription: "Database instances security group"
+      VpcId: !Ref VPC
+      SecurityGroupIngress: 
+        - 
+          CidrIp: "*.*.*.*/32"
+          FromPort: 3306
+          IpProtocol: "tcp"
+          ToPort: 3306
+      SecurityGroupEgress: 
+        - 
+          CidrIp: "0.0.0.0/0"
+          IpProtocol: "-1"
   RDSDBSubnetGroup:
-        Type: "AWS::RDS::DBSubnetGroup"
-        Properties:
-            DBSubnetGroupDescription: "Subnet Group for mySQL database"
-            DBSubnetGroupName: !Sub "${AWS::Region}-aws-database-subnet-group"
-            SubnetIds: 
-              - !Ref PrivateSubnetA
-              - !Ref PrivateSubnetB
-            Tags: 
-              - Key: Name
-                Value: production-db-ap-south
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+        DBSubnetGroupDescription: "Subnet Group for mySQL database"
+        DBSubnetGroupName: !Sub "${AWS::Region}-aws-database-subnet-group"
+        SubnetIds: 
+          - !Ref PrivateSubnetA
+          - !Ref PrivateSubnetB
+        Tags: 
+          - Key: Name
+            Value: production-db-ap-south
   MasterDB:
     Type: AWS::RDS::DBInstance
     DependsOn: PublicRoute1
