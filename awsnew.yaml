@@ -550,7 +550,7 @@ Resources:
       ImageId: !Ref AMI
       InstanceType: !Ref 'InstanceType'
       NetworkInterfaces:
-      - DeviceIndex: '0'
+      - DeviceIndex: '2'
         SubnetId: !Ref PublicSubnetA
         AssociatePublicIpAddress: True
         GroupSet: [!Ref 'InstanceSecurityGroup']
