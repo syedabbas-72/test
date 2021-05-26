@@ -1,524 +1,377 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-Description: >-
-  AWS CloudFormation Sample Template LAMP_Multi_AZ: Create a highly available,
-  scalable LAMP stack with an Amazon RDS database instance for the backend data
-  store. This template demonstrates using the AWS CloudFormation bootstrap
-  scripts to install the packages and files necessary to deploy the Apache web
-  server and PHP at instance launch time. **WARNING** This template creates one
-  or more Amazon EC2 instances, an Application Load Balancer and an Amazon RDS
-  DB instance. You will be billed for the AWS resources used if you create a
-  stack from this template.
+# This CloudFormation template deploys a basic VPC / Network.  Specifically:
+# It deploys a VPC with 1 to 6 subnets 3 Availability Zones depending on parameter selection.
+# User has the choice of public subnets or private + public subnets in each AZ.
+# When private subnets are created, NATing is provided by either an EC2 instance or NAT Gateway based on user selection.
+# The VPC and subnets are exported for use by other stacks.
 
 Metadata: 
   # Control the UI display when running this template from the AWS Management Console:
   AWS::CloudFormation::Interface: 
-    ParameterGroups:
-      - Label:
+    ParameterGroups: 
+      - Label: 
           default: "Network Configuration"
-        Parameters:
-          - OperatorEMail
-          - VpcId
-          - Subnets
-      - Label:
-          default: "EC2 Configuration"
-        Parameters:
-          - InstanceType
-          - AMI
-          - SSHLocation
-          - WebServerCapacity
-          - KeyName
-      - Label:
-          default: "RDS Configuration"
-        Parameters:
-          - DBInstanceClass
-          - DBAllocatedStorage
-          - DBName
-          - DBUser
-          - DBPassword
-          - MultiAZDatabase
-
+        Parameters: 
+          - NumberOfAZs
+          - PrivateSubnets
+          - NATType
 Parameters:
-  VpcId:
-    Type: 'AWS::EC2::VPC::Id'
-    Description: VpcId of your existing Virtual Private Cloud (VPC)
-    ConstraintDescription: must be the VPC Id of an existing Virtual Private Cloud.
-  Subnets:
-    Type: 'List<AWS::EC2::Subnet::Id>'
-    Description: The list of SubnetIds in your Virtual Private Cloud (VPC)
-    ConstraintDescription: >-
-      must be a list of at least two existing subnets associated with at least
-      two different availability zones. They should be residing in the selected
-      Virtual Private Cloud.
-  KeyName:
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
-    Type: 'AWS::EC2::KeyPair::KeyName'
-    ConstraintDescription: must be the name of an existing EC2 KeyPair.
-  OperatorEMail:
-    Description: EMail address to notify if there are any scaling operations
+  PrivateSubnets:
     Type: String
-    AllowedPattern: ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)
-    ConstraintDescription: must be a valid email address.
-  DBName:
-    Default: myDatabase
-    Description: MySQL database name
-    Type: String
-    MinLength: '1'
-    MaxLength: '64'
-    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
-    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
-  DBUser:
-    NoEcho: 'true'
-    Description: Username for MySQL database access
-    Type: String
-    MinLength: '1'
-    MaxLength: '16'
-    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
-    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
-  DBPassword:
-    NoEcho: 'true'
-    Description: Password for MySQL database access
-    Type: String
-    MinLength: '8'
-    MaxLength: '41'
-    AllowedPattern: '[a-zA-Z0-9]*'
-    ConstraintDescription: must contain only alphanumeric characters.
-  DBAllocatedStorage:
-    Default: '5'
-    Description: The size of the database (Gb)
+    AllowedValues: 
+    - True
+    - False
+    Default: True
+    Description: Do you want to create private subnets in addition to public subnets?
+
+  NumberOfAZs:
     Type: Number
-    MinValue: '5'
-    MaxValue: '1024'
-    ConstraintDescription: must be between 5 and 1024Gb.
-  DBInstanceClass:
-    Description: The database instance type
-    Type: String
-    Default: db.t2.micro
-    AllowedValues: [db.m6g.16xlarge, db.m6g.12xlarge, db.m6g.8xlarge, db.m6g.4xlarge, db.m6g.2xlarge, db.m6g.xlarge, db.m6g.large, db.m5d.24xlarge, db.m5d.16xlarge, db.m5d.12xlarge, db.m5d.8xlarge, db.m5d.4xlarge, db.m5d.2xlarge, db.m5d.xlarge, db.m5d.large, db.m5.24xlarge, db.m5.16xlarge, db.m5.12xlarge, db.m5.8xlarge, db.m5.4xlarge, db.m5.2xlarge, db.m5.xlarge, db.m5.large, db.m4.16xlarge, db.m4.10xlarge, db.m4.4xlarge, db.m4.2xlarge, db.m4.xlarge, db.m4.large, db.m3.2xlarge, db.m3.xlarge, db.m3.large, db.m3.medium, db.m1.xlarge, db.m1.large, db.m1.medium, db.m1.small, db.z1d.12xlarge, db.z1d.6xlarge, db.z1d.3xlarge, db.z1d.2xlarge, db.z1d.xlarge, db.z1d.large, db.x1e.32xlarge, db.x1e.16xlarge, db.x1e.8xlarge, db.x1e.4xlarge, db.x1e.2xlarge, db.x1e.xlarge, db.x1.32xlarge, db.x1.16xlarge, db.r6g.16xlarge, db.r6g.12xlarge, db.r6g.8xlarge, db.r6g.4xlarge, db.r6g.2xlarge, db.r6g.xlarge, db.r6g.large, db.r5d.24xlarge, db.r5d.16xlarge, db.r5d.12xlarge, db.r5d.8xlarge, db.r5d.4xlarge, db.r5d.2xlarge, db.r5d.xlarge, db.r5d.large, db.r5b.24xlarge, db.r5b.16xlarge, db.r5b.12xlarge, db.r5b.8xlarge, db.r5b.4xlarge, db.r5b.2xlarge, db.r5b.xlarge, db.r5b.large, db.r5.24xlarge, db.r5.16xlarge, db.r5.12xlarge, db.r5.8xlarge, db.r5.4xlarge, db.r5.2xlarge, db.r5.xlarge, db.r5.large, db.r4.16xlarge, db.r4.8xlarge, db.r4.4xlarge, db.r4.2xlarge, db.r4.xlarge, db.r4.large, db.r3.8xlarge**, db.r3.4xlarge, db.r3.2xlarge, db.r3.xlarge, db.r3.large, db.m2.4xlarge, db.m2.2xlarge, db.m2.xlarge, db.t3.2xlarge, db.t3.xlarge, db.t3.large, db.t3.medium, db.t3.small, db.t3.micro, db.t2.2xlarge, db.t2.xlarge, db.t2.large, db.t2.medium, db.t2.small, db.t2.micro]
-    ConstraintDescription: must select a valid database instance type.
-  MultiAZDatabase:
-    Default: 'true'
-    Description: Create a Multi-AZ MySQL Amazon RDS database instance
+    AllowedValues: 
+    - 1
+    - 2
+    - 3
+    Default: 2
+    Description:  How many Availability Zones do you wish to utilize?
+
+  NATType:
     Type: String
     AllowedValues:
-      - 'true'
-      - 'false'
-    ConstraintDescription: must be either true or false.
-  WebServerCapacity:
-    Default: '2'
-    Description: The initial number of WebServer instances
-    Type: Number
-    MinValue: '1'
-    MaxValue: '5'
-    ConstraintDescription: must be between 1 and 5 EC2 instances.
-  AMI:
-    Type: String
-    Default: ami-040589e8273e08d6e
-    Description: The Linux AMI to use.
-  InstanceType:
-    Description: WebServer EC2 instance type
-    Type: String
-    Default: t4g.micro
-    AllowedValues: [a1.2xlarge, a1.4xlarge, a1.large, a1.medium, a1.metal, a1.xlarge, c1.medium, c1.xlarge, c3.2xlarge, c3.4xlarge, c3.8xlarge, c3.large, c3.xlarge, c4.2xlarge, c4.4xlarge, c4.8xlarge, c4.large, c4.xlarge, c5.12xlarge, c5.18xlarge, c5.24xlarge, c5.2xlarge, c5.4xlarge, c5.9xlarge, c5.large, c5.metal, c5.xlarge, c5a.12xlarge, c5a.16xlarge, c5a.24xlarge, c5a.2xlarge, c5a.4xlarge, c5a.8xlarge, c5a.large, c5a.xlarge, c5ad.12xlarge, c5ad.16xlarge, c5ad.24xlarge, c5ad.2xlarge, c5ad.4xlarge, c5ad.8xlarge, c5ad.large, c5ad.xlarge, c5d.12xlarge, c5d.18xlarge, c5d.24xlarge, c5d.2xlarge, c5d.4xlarge, c5d.9xlarge, c5d.large, c5d.metal, c5d.xlarge, c5n.18xlarge, c5n.2xlarge, c5n.4xlarge, c5n.9xlarge, c5n.large, c5n.metal, c5n.xlarge, c6g.12xlarge, c6g.16xlarge, c6g.2xlarge, c6g.4xlarge, c6g.8xlarge, c6g.large, c6g.medium, c6g.metal, c6g.xlarge, c6gd.12xlarge, c6gd.16xlarge, c6gd.2xlarge, c6gd.4xlarge, c6gd.8xlarge, c6gd.large, c6gd.medium, c6gd.metal, c6gd.xlarge, c6gn.12xlarge, c6gn.16xlarge, c6gn.2xlarge, c6gn.4xlarge, c6gn.8xlarge, c6gn.large, c6gn.medium, c6gn.xlarge, cc1.4xlarge, cc2.8xlarge, cg1.4xlarge, cr1.8xlarge, d2.2xlarge, d2.4xlarge, d2.8xlarge, d2.xlarge, d3.2xlarge, d3.4xlarge, d3.8xlarge, d3.xlarge, d3en.12xlarge, d3en.2xlarge, d3en.4xlarge, d3en.6xlarge, d3en.8xlarge, d3en.xlarge, f1.16xlarge, f1.2xlarge, f1.4xlarge, g2.2xlarge, g2.8xlarge, g3.16xlarge, g3.4xlarge, g3.8xlarge, g3s.xlarge, g4ad.16xlarge, g4ad.4xlarge, g4ad.8xlarge, g4dn.12xlarge, g4dn.16xlarge, g4dn.2xlarge, g4dn.4xlarge, g4dn.8xlarge, g4dn.metal, g4dn.xlarge, h1.16xlarge, h1.2xlarge, h1.4xlarge, h1.8xlarge, hi1.4xlarge, hs1.8xlarge, i2.2xlarge, i2.4xlarge, i2.8xlarge, i2.xlarge, i3.16xlarge, i3.2xlarge, i3.4xlarge, i3.8xlarge, i3.large, i3.metal, i3.xlarge, i3en.12xlarge, i3en.24xlarge, i3en.2xlarge, i3en.3xlarge, i3en.6xlarge, i3en.large, i3en.metal, i3en.xlarge, inf1.24xlarge, inf1.2xlarge, inf1.6xlarge, inf1.xlarge, m1.large, m1.medium, m1.small, m1.xlarge, m2.2xlarge, m2.4xlarge, m2.xlarge, m3.2xlarge, m3.large, m3.medium, m3.xlarge, m4.10xlarge, m4.16xlarge, m4.2xlarge, m4.4xlarge, m4.large, m4.xlarge, m5.12xlarge, m5.16xlarge, m5.24xlarge, m5.2xlarge, m5.4xlarge, m5.8xlarge, m5.large, m5.metal, m5.xlarge, m5a.12xlarge, m5a.16xlarge, m5a.24xlarge, m5a.2xlarge, m5a.4xlarge, m5a.8xlarge, m5a.large, m5a.xlarge, m5ad.12xlarge, m5ad.16xlarge, m5ad.24xlarge, m5ad.2xlarge, m5ad.4xlarge, m5ad.8xlarge, m5ad.large, m5ad.xlarge, m5d.12xlarge, m5d.16xlarge, m5d.24xlarge, m5d.2xlarge, m5d.4xlarge, m5d.8xlarge, m5d.large, m5d.metal, m5d.xlarge, m5dn.12xlarge, m5dn.16xlarge, m5dn.24xlarge, m5dn.2xlarge, m5dn.4xlarge, m5dn.8xlarge, m5dn.large, m5dn.xlarge, m5n.12xlarge, m5n.16xlarge, m5n.24xlarge, m5n.2xlarge, m5n.4xlarge, m5n.8xlarge, m5n.large, m5n.xlarge, m5zn.12xlarge, m5zn.2xlarge, m5zn.3xlarge, m5zn.6xlarge, m5zn.large, m5zn.metal, m5zn.xlarge, m6g.12xlarge, m6g.16xlarge, m6g.2xlarge, m6g.4xlarge, m6g.8xlarge, m6g.large, m6g.medium, m6g.metal, m6g.xlarge, m6gd.12xlarge, m6gd.16xlarge, m6gd.2xlarge, m6gd.4xlarge, m6gd.8xlarge, m6gd.large, m6gd.medium, m6gd.metal, m6gd.xlarge, mac1.metal, p2.16xlarge, p2.8xlarge, p2.xlarge, p3.16xlarge, p3.2xlarge, p3.8xlarge, p3dn.24xlarge, p4d.24xlarge, r3.2xlarge, r3.4xlarge, r3.8xlarge, r3.large, r3.xlarge, r4.16xlarge, r4.2xlarge, r4.4xlarge, r4.8xlarge, r4.large, r4.xlarge, r5.12xlarge, r5.16xlarge, r5.24xlarge, r5.2xlarge, r5.4xlarge, r5.8xlarge, r5.large, r5.metal, r5.xlarge, r5a.12xlarge, r5a.16xlarge, r5a.24xlarge, r5a.2xlarge, r5a.4xlarge, r5a.8xlarge, r5a.large, r5a.xlarge, r5ad.12xlarge, r5ad.16xlarge, r5ad.24xlarge, r5ad.2xlarge, r5ad.4xlarge, r5ad.8xlarge, r5ad.large, r5ad.xlarge, r5b.12xlarge, r5b.16xlarge, r5b.24xlarge, r5b.2xlarge, r5b.4xlarge, r5b.8xlarge, r5b.large, r5b.metal, r5b.xlarge, r5d.12xlarge, r5d.16xlarge, r5d.24xlarge, r5d.2xlarge, r5d.4xlarge, r5d.8xlarge, r5d.large, r5d.metal, r5d.xlarge, r5dn.12xlarge, r5dn.16xlarge, r5dn.24xlarge, r5dn.2xlarge, r5dn.4xlarge, r5dn.8xlarge, r5dn.large, r5dn.xlarge, r5n.12xlarge, r5n.16xlarge, r5n.24xlarge, r5n.2xlarge, r5n.4xlarge, r5n.8xlarge, r5n.large, r5n.xlarge, r6g.12xlarge, r6g.16xlarge, r6g.2xlarge, r6g.4xlarge, r6g.8xlarge, r6g.large, r6g.medium, r6g.metal, r6g.xlarge, r6gd.12xlarge, r6gd.16xlarge, r6gd.2xlarge, r6gd.4xlarge, r6gd.8xlarge, r6gd.large, r6gd.medium, r6gd.metal, r6gd.xlarge, t1.micro, t2.2xlarge, t2.large, t2.medium, t2.micro, t2.nano, t2.small, t2.xlarge, t3.2xlarge, t3.large, t3.medium, t3.micro, t3.nano, t3.small, t3.xlarge, t3a.2xlarge, t3a.large, t3a.medium, t3a.micro, t3a.nano, t3a.small, t3a.xlarge, t4g.2xlarge, t4g.large, t4g.medium, t4g.micro, t4g.nano, t4g.small, t4g.xlarge, u-12tb1.112xlarge, u-12tb1.metal, u-18tb1.metal, u-24tb1.metal, u-6tb1.112xlarge, u-6tb1.56xlarge, u-6tb1.metal, u-9tb1.112xlarge, u-9tb1.metal, x1.16xlarge, x1.32xlarge, x1e.16xlarge, x1e.2xlarge, x1e.32xlarge, x1e.4xlarge, x1e.8xlarge, x1e.xlarge, x2gd.12xlarge, x2gd.16xlarge, x2gd.2xlarge, x2gd.4xlarge, x2gd.8xlarge, x2gd.large, x2gd.medium, x2gd.metal, x2gd.xlarge, z1d.12xlarge, z1d.2xlarge, z1d.3xlarge, z1d.6xlarge, z1d.large, z1d.metal, z1d.xlarge]
-    ConstraintDescription: must be a valid EC2 instance type.
-  SSHLocation:
-    Description: ' The IP address range that can be used to SSH to the EC2 instances'
-    Type: String
-    MinLength: '9'
-    MaxLength: '18'
-    Default: 0.0.0.0/0
-    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
-    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    - "EC2 NAT Instance"
+    - "NAT Gateway"
+    Default:  "NAT Gateway"
+    Description:  What type of NAT to use for private instances to communicate with the internet.  A single EC2 instance can be used as a NAT, or you can use the AWS NAT Gateway (managed, scalable, more expensive).  This setting will be IGNORED if you do not build private subnets.
+
+Conditions:
+  BuildPublicB:         !Not [ !Equals [ !Ref NumberOfAZs, 1 ]]  
+  BuildPublicC:         !Equals [ !Ref NumberOfAZs, 3 ]  
+  BuildPrivateSubnets:  !Equals [ !Ref PrivateSubnets, True ] 
+  BuildPrivateA:        !Equals [ !Ref PrivateSubnets, True ]       # Can't determine how to build a condition from a separate single condition
+  BuildPrivateB:        !And [ Condition: BuildPrivateSubnets, Condition: BuildPublicB ]
+  BuildPrivateC:        !And [ Condition: BuildPrivateSubnets, Condition: BuildPublicC ]
+  BuildNATGateway:      !And [ Condition: BuildPrivateSubnets, !Equals [ !Ref NATType, "NAT Gateway" ] ]
+  BuildNATInstance:     !And [ Condition: BuildPrivateSubnets, !Equals [ !Ref NATType, "EC2 NAT Instance" ] ]
+
+Mappings:
+  #  This is the Amazon Linux 2 AMI.  Adjust these values as needed, they can change a few times per year:
+  AmazonLinuxAMI:
+    'af-south-1':
+      AMI: 'ami-0438616cef15ba2ca'
+    'eu-north-1':
+      AMI: 'ami-0eb6f319b31f7092d'
+    'ap-south-1':
+      AMI: 'ami-08e0ca9924195beba'
+    'eu-west-3':
+      AMI: 'ami-0ea4a063871686f37'
+    'eu-west-2':
+      AMI: 'ami-098828924dc89ea4a'
+    'eu-south-1':
+      AMI: 'ami-0ea288dd7bb5b0251'
+    'eu-west-1':
+      AMI: 'ami-0fc970315c2d38f01'
+    'ap-northeast-2':
+      AMI: 'ami-09282971cf2faa4c9'
+    'me-south-1':
+      AMI: 'ami-0cc4f2b06b56d27e9'
+    'ap-northeast-1':
+      AMI: 'ami-0992fc94ca0f1415a'
+    'sa-east-1':
+      AMI: 'ami-089aac6323aa08aee'
+    'ca-central-1':
+      AMI: 'ami-075cfad2d9805c5f2'
+    'ap-east-1':
+      AMI: 'ami-040f64b9a031d8eb0'
+    'ap-southeast-1':
+      AMI: 'ami-0e2e44c03b85f58b3'
+    'ap-southeast-2':
+      AMI: 'ami-04f77aa5970939148'
+    'eu-central-1':
+      AMI: 'ami-0a6dc7529cd559185'
+    'us-east-1':
+      AMI: 'ami-047a51fa27710816e'
+    'us-east-2':
+      AMI: 'ami-01aab85a5e4a5a0fe'
+    'us-west-1':
+      AMI: 'ami-005c06c6de69aee84'
+    'us-west-2':
+      AMI: 'ami-0e999cbd62129e3b1'
 
 Resources:
-  ApplicationLoadBalancer:
-    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
-    Properties:
-      Subnets: !Ref Subnets
-  ALBListener:
-    Type: 'AWS::ElasticLoadBalancingV2::Listener'
-    Properties:
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref ALBTargetGroup
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
-      Port: '80'
-      Protocol: HTTP
-  ALBTargetGroup:
-    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
-    Properties:
-      HealthCheckIntervalSeconds: 10
-      HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      Port: 80
-      Protocol: HTTP
-      UnhealthyThresholdCount: 5
-      VpcId: !Ref VpcId
-      TargetGroupAttributes:
-        - Key: stickiness.enabled
-          Value: 'true'
-        - Key: stickiness.type
-          Value: lb_cookie
-        - Key: stickiness.lb_cookie.duration_seconds
-          Value: '30'
-  WebServerGroup:
-    Type: 'AWS::AutoScaling::AutoScalingGroup'
-    Properties:
-      VPCZoneIdentifier: !Ref Subnets
-      LaunchConfigurationName: !Ref LaunchConfig
-      MinSize: '1'
-      MaxSize: '5'
-      DesiredCapacity: !Ref WebServerCapacity
-      TargetGroupARNs:
-        - !Ref ALBTargetGroup
-      NotificationConfigurations:
-        - TopicARN: !Ref 'NotificationTopic'
-          NotificationTypes: ['autoscaling:EC2_INSTANCE_LAUNCH', 'autoscaling:EC2_INSTANCE_LAUNCH_ERROR', 'autoscaling:EC2_INSTANCE_TERMINATE', 'autoscaling:EC2_INSTANCE_TERMINATE_ERROR']
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT5M
-        Count: !Ref WebServerCapacity
-    UpdatePolicy:
-      AutoScalingRollingUpdate:
-        MinInstancesInService: '1'
-        MaxBatchSize: '1'
-        PauseTime: PT15M
-        WaitOnResourceSignals: 'true'
-  LaunchConfig:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Metadata:
-      Comment1: Configure the bootstrap helpers to install the Apache Web Server and PHP
-      Comment2: >-
-        The website content is downloaded from the CloudFormationPHPSample.zip
-        file
-      'AWS::CloudFormation::Init':
-        config:
-          packages:
-            yum:
-              httpd: []
-              php: []
-              php-mysql: []
-          files:
-            /var/www/html/index.php:
-              content: !Join 
-                - ''
-                - - |
-                    <html>
-                  - |2
-                      <head>
-                  - |2
-                        <title>AWS CloudFormation PHP Sample</title>
-                  - |2
-                        <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
-                  - |2
-                      </head>
-                  - |2
-                      <body>
-                  - |2
-                        <h1>Welcome to the AWS CloudFormation PHP Sample</h1>
-                  - |2
-                        <p/>
-                  - |2
-                        <?php
-                  - |2
-                          // Print out the current data and tie
-                  - |2
-                          print "The Current Date and Time is: <br/>";
-                  - |2
-                          print date("g:i A l, F j Y.");
-                  - |2
-                        ?>
-                  - |2
-                        <p/>
-                  - |2
-                        <?php
-                  - |2
-                          // Setup a handle for CURL
-                  - |2
-                          $curl_handle=curl_init();
-                  - |2
-                          curl_setopt($curl_handle,CURLOPT_CONNECTTIMEOUT,2);
-                  - |2
-                          curl_setopt($curl_handle,CURLOPT_RETURNTRANSFER,1);
-                  - |2
-                          // Get the hostname of the intance from the instance metadata
-                  - |2
-                          curl_setopt($curl_handle,CURLOPT_URL,'http://169.254.169.254/latest/meta-data/public-hostname');
-                  - |2
-                          $hostname = curl_exec($curl_handle);
-                  - |2
-                          if (empty($hostname))
-                  - |2
-                          {
-                  - |2
-                            print "Sorry, for some reason, we got no hostname back <br />";
-                  - |2
-                          }
-                  - |2
-                          else
-                  - |2
-                          {
-                  - |2
-                            print "Server = " . $hostname . "<br />";
-                  - |2
-                          }
-                  - |2
-                          // Get the instance-id of the intance from the instance metadata
-                  - |2
-                          curl_setopt($curl_handle,CURLOPT_URL,'http://169.254.169.254/latest/meta-data/instance-id');
-                  - |2
-                          $instanceid = curl_exec($curl_handle);
-                  - |2
-                          if (empty($instanceid))
-                  - |2
-                          {
-                  - |2
-                            print "Sorry, for some reason, we got no instance id back <br />";
-                  - |2
-                          }
-                  - |2
-                          else
-                  - |2
-                          {
-                  - |2
-                            print "EC2 instance-id = " . $instanceid . "<br />";
-                  - |2
-                          }
-                  - '      $Database   = "'
-                  - !GetAtt 
-                    - MySQLDatabase
-                    - Endpoint.Address
-                  - |
-                    ";
-                  - '      $DBUser     = "'
-                  - !Ref DBUser
-                  - |
-                    ";
-                  - '      $DBPassword = "'
-                  - !Ref DBPassword
-                  - |
-                    ";
-                  - |2
-                          print "Database = " . $Database . "<br />";
-                  - |2
-                          $dbconnection = mysql_connect($Database, $DBUser, $DBPassword)
-                  - |2
-                                          or die("Could not connect: " . mysql_error());
-                  - |2
-                          print ("Connected to $Database successfully");
-                  - |2
-                          mysql_close($dbconnection);
-                  - |2
-                        ?>
-                  - |2
-                        <h2>PHP Information</h2>
-                  - |2
-                        <p/>
-                  - |2
-                        <?php
-                  - |2
-                          phpinfo();
-                  - |2
-                        ?>
-                  - |2
-                      </body>
-                  - |
-                    </html>
-              mode: '000600'
-              owner: apache
-              group: apache
-            /etc/cfn/cfn-hup.conf:
-              content: !Join 
-                - ''
-                - - |
-                    [main]
-                  - stack=
-                  - !Ref 'AWS::StackId'
-                  - |+
 
-                  - region=
-                  - !Ref 'AWS::Region'
-                  - |+
-
-              mode: '000400'
-              owner: root
-              group: root
-            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
-              content: !Join 
-                - ''
-                - - |
-                    [cfn-auto-reloader-hook]
-                  - |
-                    triggers=post.update
-                  - >
-                    path=Resources.LaunchConfig.Metadata.AWS::CloudFormation::Init
-                  - 'action=/opt/aws/bin/cfn-init -v '
-                  - '         --stack '
-                  - !Ref 'AWS::StackName'
-                  - '         --resource LaunchConfig '
-                  - '         --region '
-                  - !Ref 'AWS::Region'
-                  - |+
-
-                  - |
-                    runas=root
-              mode: '000400'
-              owner: root
-              group: root
-          services:
-            sysvinit:
-              httpd:
-                enabled: 'true'
-                ensureRunning: 'true'
-              cfn-hup:
-                enabled: 'true'
-                ensureRunning: 'true'
-                files:
-                  - /etc/cfn/cfn-hup.conf
-                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+  # First, a VPC:
+  VPC:
+    Type: AWS::EC2::VPC
     Properties:
-      ImageId: !Ref AMI
-      InstanceType: !Ref InstanceType
-      SecurityGroups:
-        - !Ref WebServerSecurityGroup
-      KeyName: !Ref KeyName
-      UserData: !Base64 
-        'Fn::Join':
-          - ''
-          - - |
-              #!/bin/bash -xe
-            - |
-              yum update -y aws-cfn-bootstrap
-            - |
-              # Install the files and packages from the metadata
-            - '/opt/aws/bin/cfn-init -v '
-            - '         --stack '
-            - !Ref 'AWS::StackName'
-            - '         --resource LaunchConfig '
-            - '         --region '
-            - !Ref 'AWS::Region'
-            - |+
-
-            - |
-              # Signal the status from cfn-init
-            - '/opt/aws/bin/cfn-signal -e $? '
-            - '         --stack '
-            - !Ref 'AWS::StackName'
-            - '         --resource WebServerGroup '
-            - '         --region '
-            - !Ref 'AWS::Region'
-            - |+
-
-  WebServerSecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupDescription: Enable HTTP access via port 80 locked down to the ELB and SSH access
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: '80'
-          ToPort: '80'
-          SourceSecurityGroupId: !Select 
-            - 0
-            - !GetAtt 
-              - ApplicationLoadBalancer
-              - SecurityGroups
-        - IpProtocol: tcp
-          FromPort: '22'
-          ToPort: '22'
-          CidrIp: !Ref SSHLocation
-      VpcId: !Ref VpcId
-  WebServerScaleUpPolicy:
-    Type: AWS::AutoScaling::ScalingPolicy
-    Properties:
-      AdjustmentType: ChangeInCapacity
-      AutoScalingGroupName: !Ref 'WebServerGroup'
-      Cooldown: '60'
-      ScalingAdjustment: 1
-  WebServerScaleDownPolicy:
-    Type: AWS::AutoScaling::ScalingPolicy
-    Properties:
-      AdjustmentType: ChangeInCapacity
-      AutoScalingGroupName: !Ref 'WebServerGroup'
-      Cooldown: '60'
-      ScalingAdjustment: -1
-  CPUAlarmHigh:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: Scale-up if CPU > 90% for 10 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 2
-      Threshold: 90
-      AlarmActions: [!Ref 'WebServerScaleUpPolicy']
-      Dimensions:
-      - Name: AutoScalingGroupName
-        Value: !Ref 'WebServerGroup'
-      ComparisonOperator: GreaterThanThreshold
-  CPUAlarmLow:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: Scale-down if CPU < 70% for 10 minutes
-      MetricName: CPUUtilization
-      Namespace: AWS/EC2
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 2
-      Threshold: 70
-      AlarmActions: [!Ref 'WebServerScaleDownPolicy']
-      Dimensions:
-      - Name: AutoScalingGroupName
-        Value: !Ref 'WebServerGroup'
-      ComparisonOperator: LessThanThreshold
-  DBEC2SecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupDescription: Open database for access
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: '3306'
-          ToPort: '3306'
-          SourceSecurityGroupId: !Ref WebServerSecurityGroup
-      VpcId: !Ref VpcId
-  MySQLDatabase:
-    Type: 'AWS::RDS::DBInstance'
-    Properties:
-      Engine: MySQL
-      DBName: !Ref DBName
-      MultiAZ: !Ref MultiAZDatabase
-      MasterUsername: !Ref DBUser
-      MasterUserPassword: !Ref DBPassword
-      DBInstanceClass: !Ref DBInstanceClass
-      AllocatedStorage: !Ref DBAllocatedStorage
-      StorageType: gp2
-      PubliclyAccessible: True
-      VPCSecurityGroups:
-        - !GetAtt 
-          - DBEC2SecurityGroup
-          - GroupId
-    ReplicaDB:
-    Type: AWS::RDS::DBInstance
-    Properties:
-      SourceDBInstanceIdentifier: !Ref 'MasterDB'
-      DBInstanceClass: !Ref 'DBInstanceClass'
+      CidrBlock: 10.1.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
       Tags:
       - Key: Name
-        Value: Read Replica Database
-  # Notifications Auto Load Balancer EC2
-  NotificationTopic:
-    Type: AWS::SNS::Topic
+        Value: !Sub ${AWS::StackName}-VPC
+
+  # Our VPC will need internet access:      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    # Notice how you can't attach an IGW to a VPC unless both are created:
     Properties:
-      Subscription:
-      - Endpoint: !Ref 'OperatorEMail'
-        Protocol: email
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Now some subnets, 2 public and 2 private:
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.10.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list        
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-Public-A
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Condition: BuildPublicB
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.20.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-Public-B
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet
+    Condition: BuildPublicC
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.30.0/24
+      AvailabilityZone: !Select [ 2, !GetAZs ]    # Get the third AZ in the list  
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-Public-C
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Condition: BuildPrivateA
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.50.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs ]    # Get the first AZ in the list  
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-Private-A
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Condition: BuildPrivateB
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.60.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs ]    # Get the second AZ in the list  
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-Private-B
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Condition: BuildPrivateC
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.1.70.0/24
+      AvailabilityZone: !Select [ 2, !GetAZs ]    # Get the third AZ in the list  
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-Private-C
+        
+  # Some route tables for our subnets:        
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public
+  PublicRoute1:   # Public route table has direct routing to IGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+  # Here is a private route table:
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: BuildPrivateSubnets
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Private
+  PrivateRoute1:            # Private route table can access web via NAT (created below)
+    Type: AWS::EC2::Route
+    Condition: BuildPrivateSubnets
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      # If we are using a NAT Instance, route traffic through the NAT Instance:
+      InstanceId:   !If [ BuildNATInstance, !Ref NATInstance, !Ref "AWS::NoValue" ]
+      # Otherwise if we are using a NAT Gateway, route traffic through the NAT Gateway:
+      NatGatewayId: !If [ BuildNATGateway, !Ref NATGateway, !Ref "AWS::NoValue" ]
+
+  # Attach the public subnets to public route tables, 
+  # and attach the private subnets to private route tables:    
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: BuildPublicB
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: BuildPublicC
+    Properties:
+      SubnetId: !Ref PublicSubnetC
+      RouteTableId: !Ref PublicRouteTable
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: BuildPrivateA
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: BuildPrivateB
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: BuildPrivateC
+    Properties:
+      SubnetId: !Ref PrivateSubnetC
+      RouteTableId: !Ref PrivateRouteTable
+
+  # A security group for our NAT.  Ingress from the VPC IPs only.  Egress is TCP & UDP only:
+  NATSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: BuildNATInstance
+    DependsOn: AttachGateway
+    Properties:
+      GroupName: !Sub NATSecurityGroup-${AWS::StackName}
+      GroupDescription: Enable internal access to the NAT device
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '0'
+        ToPort: '1024'
+        CidrIp: !GetAtt VPC.CidrBlock
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: '0'
+        ToPort: '65535'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: udp
+        FromPort: '0'
+        ToPort: '65535'
+        CidrIp: 0.0.0.0/0
+
+
+  # A NAT Instance will be built and used if the user selected Private subnets and specified an EC2 instance over a managed Gateway.  
+  NATInstance:
+    Type: AWS::EC2::Instance
+    Condition: BuildNATInstance
+    DependsOn: PublicRoute1                                           # Must have route to IGW established.
+    Properties:
+      ImageId: !FindInMap [ AmazonLinuxAMI, !Ref "AWS::Region", AMI]  # We lookup the AMI from the Region Map
+      InstanceType: t2.small                                          # Any instance type is fine
+      NetworkInterfaces:
+      - DeviceIndex: '0'
+        SubnetId: !Ref PublicSubnetA                                  # Any public subnet is fine
+        AssociatePublicIpAddress: true                                # We will definitely need a public IP address
+        GroupSet: [!Ref NATSecurityGroup]                             # Plug in the security group
+      SourceDestCheck: false                                          # NATs don't work if EC2 tries the match source addresses with destinations.
+      Tags:
+      - Key: Name
+        Value: !Sub NAT-${AWS::StackName}
+      UserData:      #  This code is NAT code.  Look at how the last line signals the wait condition:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum -y update
+          yum install -y aws-cfn-bootstrap
+          echo 1 > /proc/sys/net/ipv4/ip_forward
+          echo 0 > /proc/sys/net/ipv4/conf/eth0/send_redirects
+          /sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE
+          /sbin/iptables-save > /etc/sysconfig/iptables
+          mkdir -p /etc/sysctl.d/
+          cat << NatConfFileMarker > /etc/sysctl.d/nat.conf
+          net.ipv4.ip_forward = 1
+          net.ipv4.conf.eth0.send_redirects = 0
+          NatConfFileMarker
+          /opt/aws/bin/cfn-signal -e 0 --resource NATInstance --stack ${AWS::StackName} --region ${AWS::Region}
+    # This NATInstance is only complete when you get 1 signal back within 5 minutes'.
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT5M
+
+  # A NAT Gateway will be built and used if the user selected Private subnets and a Gateway instead of an EC2 instance.  
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Condition: BuildNATGateway
+    Properties: 
+      AllocationId: !GetAtt ElasticIPAddress.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags: 
+      - Key: Name
+        Value: !Sub NAT-${AWS::StackName}
+  ElasticIPAddress:
+    Type: AWS::EC2::EIP
+    Condition: BuildNATGateway
+    Properties:
+      Domain: VPC
 
 Outputs:
-  WebsiteURL:
-    Description: URL for newly created LAMP stack
-    Value: !Join 
-      - ''
-      - - 'http://'
-        - !GetAtt 
-          - ApplicationLoadBalancer
-          - DNSName
+  VPC:
+    Description: VPC of the base network
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${AWS::StackName}-VPC
+  PublicSubnetA:
+    Description: First Public Subnet
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSubnetA
+  PublicSubnetB:
+    Description: Second Public Subnet
+    Condition: BuildPublicB
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSubnetB
+  PublicSubnetC:
+    Description: Third Public Subnet
+    Condition: BuildPublicC
+    Value: !Ref PublicSubnetC
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSubnetC
+  PrivateSubnetA:
+    Condition: BuildPrivateSubnets
+    Description: First Private Subnet
+    Value: !Ref PrivateSubnetA
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnetA
+  PrivateSubnetB:
+    Condition: BuildPrivateB
+    Description: Second Private Subnet
+    Value: !Ref PrivateSubnetB
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnetB
+  PrivateSubnetC:
+    Condition: BuildPrivateC
+    Description: Third Private Subnet
+    Value: !Ref PrivateSubnetC
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnetC
