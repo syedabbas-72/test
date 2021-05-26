@@ -696,9 +696,7 @@ Resources:
       Tags:
       - Key: Name
         Value: Master Database
-    BackupRetentionPeriod: 7
     DeletionPolicy: Snapshot
-    DeletionProtection: true
   ReplicaDB:
     Type: AWS::RDS::DBInstance
     Properties:
