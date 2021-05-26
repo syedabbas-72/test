@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >-
+  MultiZone RDS
+
+Metadata: 
+  # Control the UI display when running this template from the AWS Management Console:
+  AWS::CloudFormation::Interface: 
+    ParameterGroups:
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+      - Label:
+          default: "RDS Configuration"
+        Parameters:
+          - DBInstanceClass
+          - DBAllocatedStorage
+          - DBName
+          - DBUser
+          - DBPassword
+          - MultiAZDatabase
+          - EC2Subnets
+          - RDSSubnets
+
+Parameters:
+  VpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: VpcId of your existing Virtual Private Cloud (VPC)
+    ConstraintDescription: must be the VPC Id of an existing Virtual Private Cloud.
+  DBName:
+    Default: myDatabase
+    Description: MySQL database name
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBUser:
+    NoEcho: 'true'
+    Description: Username for MySQL database access
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword:
+    NoEcho: 'true'
+    Description: Password for MySQL database access
+    Type: String
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+  DBAllocatedStorage:
+    Default: '5'
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 5 and 1024Gb.
+  DBInstanceClass:
+    Description: The database instance type
+    Type: String
+    Default: db.t2.micro
+    AllowedValues: [db.m6g.16xlarge, db.m6g.12xlarge, db.m6g.8xlarge, db.m6g.4xlarge, db.m6g.2xlarge, db.m6g.xlarge, db.m6g.large, db.m5d.24xlarge, db.m5d.16xlarge, db.m5d.12xlarge, db.m5d.8xlarge, db.m5d.4xlarge, db.m5d.2xlarge, db.m5d.xlarge, db.m5d.large, db.m5.24xlarge, db.m5.16xlarge, db.m5.12xlarge, db.m5.8xlarge, db.m5.4xlarge, db.m5.2xlarge, db.m5.xlarge, db.m5.large, db.m4.16xlarge, db.m4.10xlarge, db.m4.4xlarge, db.m4.2xlarge, db.m4.xlarge, db.m4.large, db.m3.2xlarge, db.m3.xlarge, db.m3.large, db.m3.medium, db.m1.xlarge, db.m1.large, db.m1.medium, db.m1.small, db.z1d.12xlarge, db.z1d.6xlarge, db.z1d.3xlarge, db.z1d.2xlarge, db.z1d.xlarge, db.z1d.large, db.x1e.32xlarge, db.x1e.16xlarge, db.x1e.8xlarge, db.x1e.4xlarge, db.x1e.2xlarge, db.x1e.xlarge, db.x1.32xlarge, db.x1.16xlarge, db.r6g.16xlarge, db.r6g.12xlarge, db.r6g.8xlarge, db.r6g.4xlarge, db.r6g.2xlarge, db.r6g.xlarge, db.r6g.large, db.r5d.24xlarge, db.r5d.16xlarge, db.r5d.12xlarge, db.r5d.8xlarge, db.r5d.4xlarge, db.r5d.2xlarge, db.r5d.xlarge, db.r5d.large, db.r5b.24xlarge, db.r5b.16xlarge, db.r5b.12xlarge, db.r5b.8xlarge, db.r5b.4xlarge, db.r5b.2xlarge, db.r5b.xlarge, db.r5b.large, db.r5.24xlarge, db.r5.16xlarge, db.r5.12xlarge, db.r5.8xlarge, db.r5.4xlarge, db.r5.2xlarge, db.r5.xlarge, db.r5.large, db.r4.16xlarge, db.r4.8xlarge, db.r4.4xlarge, db.r4.2xlarge, db.r4.xlarge, db.r4.large, db.r3.8xlarge**, db.r3.4xlarge, db.r3.2xlarge, db.r3.xlarge, db.r3.large, db.m2.4xlarge, db.m2.2xlarge, db.m2.xlarge, db.t3.2xlarge, db.t3.xlarge, db.t3.large, db.t3.medium, db.t3.small, db.t3.micro, db.t2.2xlarge, db.t2.xlarge, db.t2.large, db.t2.medium, db.t2.small, db.t2.micro]
+    ConstraintDescription: must select a valid database instance type.
+  MultiAZDatabase:
+    Default: 'true'
+    Description: Create a Multi-AZ MySQL Amazon RDS database instance
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    ConstraintDescription: must be either true or false.
+  RDSSubnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: The list of SubnetIds in your Virtual Private Cloud (VPC)
+    ConstraintDescription: >-
+      must be a list of at least two existing subnets associated with at least
+      two different availability zones. They should be residing in the selected
+      Virtual Private Cloud.
+  EC2Subnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: The list of SubnetIds in your Virtual Private Cloud (VPC)
+    ConstraintDescription: >-
+      must be a list of at least two existing subnets associated with at least
+      two different availability zones. They should be residing in the selected
+      Virtual Private Cloud.
+
+Resources:
+  # RDS Subnet Group
+  RDSDBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: "description"
+      DBSubnetGroupName: "RDS_DB_PrivSubnet"
+      SubnetIds: !Ref EC2Subnets
+  # RDS security group inbound and outbound access
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: RDSSecurityGroup
+      VpcId: !Ref VpcId
+      GroupDescription: Enable MySql access via user defined port
+      SecurityGroupIngress:
+        - CidrIp: 10.0.0.0/16
+          FromPort: 3306
+          IpProtocol: tcp
+          ToPort: 3306
+  MySQLDatabase:
+    Type: 'AWS::RDS::DBInstance'
+    DeletionPolicy: "Snapshot"
+    Properties:
+      Engine: MySQL
+      DBName: !Ref DBName
+      StorageType: gp2
+      MultiAZ: !Ref MultiAZDatabase
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      PubliclyAccessible: True
+      DBSubnetGroupName: !Ref RDSDBSubnetGroup
+      VPCSecurityGroups:
+          - Ref: RDSSecurityGroup
+  ReplicaDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      SourceDBInstanceIdentifier: !Ref MySQLDatabase
+      DBInstanceClass: !Ref DBInstanceClass
+      Tags:
+      - Key: Name
+        Value: Read Replica Database
+
+Outputs:
+  RDSDBSubnetGroup:
+        Description: 'RDS Private Subnet Group'
+        Value:
+          Ref: 'RDSDBSubnetGroup'
+  RDSSecurityGroup:
+      Description: 'RDS Security Group'
+      Value:
+        Ref: 'RDSSecurityGroup'
