@@ -132,11 +132,11 @@ Parameters:
 
 Resources:
   ApplicationLoadBalancer:
-    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
     Properties:
       Subnets: !Ref Subnets
   ALBListener:
-    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Type: 'AWS::ElasticLoadBalancing::Listener'
     Properties:
       DefaultActions:
         - Type: forward
@@ -145,7 +145,7 @@ Resources:
       Port: '80'
       Protocol: HTTP
   ALBTargetGroup:
-    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Type: 'AWS::ElasticLoadBalancing::TargetGroup'
     Properties:
       HealthCheckIntervalSeconds: 10
       HealthCheckTimeoutSeconds: 5
@@ -276,6 +276,7 @@ Resources:
       DBInstanceClass: !Ref DBInstanceClass
       AllocatedStorage: !Ref DBAllocatedStorage
       StorageType: gp2
+      VpcId: !Ref VpcId
       PubliclyAccessible: True
       VPCSecurityGroups:
         - !GetAtt 
