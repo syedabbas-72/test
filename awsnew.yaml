@@ -135,15 +135,6 @@ Resources:
     Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
     Properties:
       Subnets: !Ref Subnets
-  ALBListener:
-    Type: 'AWS::ElasticLoadBalancing::Listener'
-    Properties:
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref ALBTargetGroup
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
-      Port: '80'
-      Protocol: HTTP
   ALBTargetGroup:
     Type: 'AWS::ElasticLoadBalancing::TargetGroup'
     Properties:
