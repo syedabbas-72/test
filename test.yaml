@@ -219,7 +219,6 @@ Resources:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
       ImageId: !Ref AMI
-      InstanceInitiatedShutdownBehavior: stop
       InstanceType: !Ref InstanceType
       KeyName:
         Ref: KeyName
@@ -230,7 +229,6 @@ Resources:
         GroupSet:
         - !Ref WebServerSecurityGroup
         SubnetId: !Ref EC2Subnets
-      Tenancy: default
       
   WebServerSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
