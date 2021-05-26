@@ -1,794 +1,1092 @@
-AWSTemplateFormatVersion: 2010-09-09
-Description: >-
-  AWS CloudFormation Sample Template LAMP_Multi_AZ: Create a highly available,
-  scalable LAMP stack with an Amazon RDS database instance for the backend data
-  store. This template demonstrates using the AWS CloudFormation bootstrap
-  scripts to install the packages and files necessary to deploy the Apache web
-  server and PHP at instance launch time. **WARNING** This template creates one
-  or more Amazon EC2 instances, an Application Load Balancer and an Amazon RDS
-  DB instance. You will be billed for the AWS resources used if you create a
-  stack from this template.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Webapp ASG, Baked AMI, ELB, R53, RDS Backed and Optional SSL by Levon
+  Becker v20160517-1230
 Parameters:
-  VpcId:
-    Type: 'AWS::EC2::VPC::Id'
-    Description: VpcId of your existing Virtual Private Cloud (VPC)
-    ConstraintDescription: must be the VPC Id of an existing Virtual Private Cloud.
-  Subnets:
-    Type: 'List<AWS::EC2::Subnet::Id>'
-    Description: The list of SubnetIds in your Virtual Private Cloud (VPC)
-    ConstraintDescription: >-
-      must be a list of at least two existing subnets associated with at least
-      two different availability zones. They should be residing in the selected
-      Virtual Private Cloud.
-  KeyName:
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
-    Type: 'AWS::EC2::KeyPair::KeyName'
-    ConstraintDescription: must be the name of an existing EC2 KeyPair.
-  DBName:
-    Default: myDatabase
-    Description: MySQL database name
+  Owner:
+    Description: Enter Team or Individual Name Responsible for the Stack.
     Type: String
-    MinLength: '1'
-    MaxLength: '64'
-    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
-    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
-  DBUser:
-    NoEcho: 'true'
-    Description: Username for MySQL database access
+    Default: FirstName LastName
+  Project:
+    Description: Enter Project Name.
     Type: String
-    MinLength: '1'
-    MaxLength: '16'
-    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
-    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
-  DBPassword:
-    NoEcho: 'true'
-    Description: Password for MySQL database access
+    Default: Autoscaling Baked AMI RDS Backed Webapp Stack Creation
+  DeleteAfter:
+    Description: Enter Date It's Ok to Delete the Stack or 'Never' if meant to be
+      persistent.
     Type: String
-    MinLength: '8'
-    MaxLength: '41'
-    AllowedPattern: '[a-zA-Z0-9]*'
-    ConstraintDescription: must contain only alphanumeric characters.
-  DBAllocatedStorage:
-    Default: '5'
-    Description: The size of the database (Gb)
+    Default: 00/00/201x
+  Ec2KeyPair:
+    Description: Select Keypair to Assign to EC2 Instances
+    Type: AWS::EC2::KeyPair::KeyName
+  MinAutoScaleCount:
+    Description: Enter Minimum Instance Auto Scale Count.
     Type: Number
-    MinValue: '5'
-    MaxValue: '1024'
-    ConstraintDescription: must be between 5 and 1024Gb.
-  DBInstanceClass:
-    Description: The database instance type
-    Type: String
-    Default: db.t2.small
-    AllowedValues:
-      - db.t1.micro
-      - db.m1.small
-      - db.m1.medium
-      - db.m1.large
-      - db.m1.xlarge
-      - db.m2.xlarge
-      - db.m2.2xlarge
-      - db.m2.4xlarge
-      - db.m3.medium
-      - db.m3.large
-      - db.m3.xlarge
-      - db.m3.2xlarge
-      - db.m4.large
-      - db.m4.xlarge
-      - db.m4.2xlarge
-      - db.m4.4xlarge
-      - db.m4.10xlarge
-      - db.r3.large
-      - db.r3.xlarge
-      - db.r3.2xlarge
-      - db.r3.4xlarge
-      - db.r3.8xlarge
-      - db.m2.xlarge
-      - db.m2.2xlarge
-      - db.m2.4xlarge
-      - db.cr1.8xlarge
-      - db.t2.micro
-      - db.t2.small
-      - db.t2.medium
-      - db.t2.large
-    ConstraintDescription: must select a valid database instance type.
-  MultiAZDatabase:
-    Default: 'true'
-    Description: Create a Multi-AZ MySQL Amazon RDS database instance
-    Type: String
-    AllowedValues:
-      - 'true'
-      - 'false'
-    ConstraintDescription: must be either true or false.
-  WebServerCapacity:
     Default: '2'
-    Description: The initial number of WebServer instances
+  MaxAutoScaleCount:
+    Description: Enter Maximum Instance Auto Scale Count.
     Type: Number
-    MinValue: '1'
-    MaxValue: '5'
-    ConstraintDescription: must be between 1 and 5 EC2 instances.
-  InstanceType:
-    Description: WebServer EC2 instance type
+    Default: '4'
+  VPC:
+    Description: Select VPC.
+    Type: AWS::EC2::VPC::Id
+  PublicSubnet1:
+    Description: Public Subnet 1 to Deploy ELB to.
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnet2:
+    Description: Public Subnet 2 to Deploy ELB to.
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnet3:
+    Description: Public Subnet 3 to Deploy ELB to.
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet1:
+    Description: Private Subnet 1 to Deploy Webapp Autoscaling Group to.
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet2:
+    Description: Private Subnet 2 to Deploy Webapp Autoscaling Group to.
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet3:
+    Description: Private Subnet 3 to Deploy Webapp Autoscaling Group to.
+    Type: AWS::EC2::Subnet::Id
+  InternalAccessSecurityGroup:
+    Description: Security Group That Allows Bastion Host Access to Instances.
+    Type: AWS::EC2::SecurityGroup::Id
+  RemoteSecurityGroup:
+    Description: Remote Network or IP that can Access the instances of VPN or Direct
+      Connect.
+    Type: AWS::EC2::SecurityGroup::Id
+  RDSAccessSecurityGroup:
+    Description: Security Group That Instance Access to RDS Instances.
+    Type: AWS::EC2::SecurityGroup::Id
+  PublicNetworkAcl:
+    Description: Enter Public Network ACL ID.
     Type: String
-    Default: t2.small
+    Default: acl-0000000
+  Route53ElbAlias:
+    Description: "(Skip if Not Configuring Route 53) DNS Record to Update for the
+      ELB."
+    Type: String
+    Default: www.domain.com
+  R53HostedZoneName:
+    Description: "(Skip if Not Configuring Route 53) Hosted DNS Name."
+    Type: String
+    Default: domain.com
+  ElbSslCertArn:
+    Description: "(Skip if Not Using SSL) SSL Certificate ARN for the ELB to use."
+    Type: String
+    Default: arn:aws:iam::0000000000000:server-certificate/www.domain.com
+  ElbHttpListeningPort:
+    Description: Enter HTTP Listening Port for ELB.
+    Type: String
+    Default: '80'
+    MinLength: '2'
+    MaxLength: '5'
+    AllowedPattern: "(\\d{2,5})"
+  ElbHttpsListeningPort:
+    Description: "(Skip if Not Using SSL) Enter HTTPS Listening Port for ELB."
+    Type: String
+    Default: '443'
+    MinLength: '2'
+    MaxLength: '5'
+    AllowedPattern: "(\\d{2,5})"
+  InstanceHttpListeningPort:
+    Description: Enter HTTP Listening Port for Instance.
+    Type: String
+    Default: '80'
+    MinLength: '2'
+    MaxLength: '5'
+    AllowedPattern: "(\\d{2,5})"
+  ConfigureDns:
+    Description: Configure Route 53 DNS to ELB? Be sure a matching record doesn't
+      already exist.
+    Type: String
+    Default: 'false'
     AllowedValues:
-      - t1.micro
-      - t2.nano
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
-      - m1.small
-      - m1.medium
-      - m1.large
-      - m1.xlarge
-      - m2.xlarge
-      - m2.2xlarge
-      - m2.4xlarge
-      - m3.medium
-      - m3.large
-      - m3.xlarge
-      - m3.2xlarge
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
-      - m4.4xlarge
-      - m4.10xlarge
-      - c1.medium
-      - c1.xlarge
-      - c3.large
-      - c3.xlarge
-      - c3.2xlarge
-      - c3.4xlarge
-      - c3.8xlarge
-      - c4.large
-      - c4.xlarge
-      - c4.2xlarge
-      - c4.4xlarge
-      - c4.8xlarge
-      - g2.2xlarge
-      - g2.8xlarge
-      - r3.large
-      - r3.xlarge
-      - r3.2xlarge
-      - r3.4xlarge
-      - r3.8xlarge
-      - i2.xlarge
-      - i2.2xlarge
-      - i2.4xlarge
-      - i2.8xlarge
-      - d2.xlarge
-      - d2.2xlarge
-      - d2.4xlarge
-      - d2.8xlarge
-      - hi1.4xlarge
-      - hs1.8xlarge
-      - cr1.8xlarge
-      - cc2.8xlarge
-      - cg1.4xlarge
-    ConstraintDescription: must be a valid EC2 instance type.
-  SSHLocation:
-    Description: ' The IP address range that can be used to SSH to the EC2 instances'
+    - 'true'
+    - 'false'
+  ElbStickySessions:
+    Description: Enabled Sticky Sessions on ELB?
     Type: String
-    MinLength: '9'
-    MaxLength: '18'
-    Default: 0.0.0.0/0
-    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
-    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    Default: 'false'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  CookieExpirationPeriod:
+    Description: "(Skip if Not Using Sticky Sessions) Enter ELB Sticky Session Cookie
+      Timeout in seconds."
+    Type: Number
+    Default: '43200'
+  UseSsl:
+    Description: Use SSL/TLS?
+    Type: String
+    Default: 'false'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  ListenOnBothPorts:
+    Description: "(Skip if Not Using SSL) Listen on Both HTTP and HTTPS on the ELB?"
+    Type: String
+    Default: 'false'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  SetupElbLogging:
+    Description: Select whether or not to setup S3 Bucket for ELB Logging.
+    Type: String
+    Default: 'false'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  AMI:
+    Description: Enter Baked AMI ID.
+    Type: String
+    Default: ami-00000000
+  InstanceType:
+    Description: Select Instance Type.
+    Type: String
+    Default: m3.medium
+    AllowedValues:
+    - t2.nano
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - m1.small
+    - m1.medium
+    - m1.large
+    - m1.xlarge
+    - m2.xlarge
+    - m2.2xlarge
+    - m2.4xlarge
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    - c1.medium
+    - c1.xlarge
+    - c3.large
+    - c3.xlarge
+    - c3.2xlarge
+    - c3.4xlarge
+    - c3.8xlarge
+    - c4.large
+    - c4.xlarge
+    - c4.2xlarge
+    - c4.4xlarge
+    - c4.8xlarge
+    - g2.2xlarge
+    - g2.8xlarge
+    - r3.large
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - i2.xlarge
+    - i2.2xlarge
+    - i2.4xlarge
+    - i2.8xlarge
+    - d2.xlarge
+    - d2.2xlarge
+    - d2.4xlarge
+    - d2.8xlarge
+    - hi1.4xlarge
+    - hs1.8xlarge
+    - cr1.8xlarge
+    - cc2.8xlarge
+    - cg1.4xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+  OsType:
+    Description: Select OS Type of the AMI.
+    Type: String
+    Default: rhel7
+    AllowedValues:
+    - amazon
+    - centos6
+    - centos7
+    - rhel6
+    - rhel7
+    - ubuntu
+    - windows
+  AsgSnsTopicArn:
+    Description: Enter Notification SNS Topic ARN for Autoscaling Group.
+    Type: String
+    Default: arn:aws:sns:us-west-2:000000000000:asg-alerts
+  AllowHttpToElbRuleNumber:
+    Description: Enter Public Network ACL Rule Number to Allow HTTP From Internet
+      to ELB.
+    Type: Number
+    Default: '300'
+  AllowHttpsToElbRuleNumber:
+    Description: Enter Public Network ACL Rule Number to Allow HTTPS From Internet
+      to ELB. (Skip if Not Using SSL)
+    Type: Number
+    Default: '305'
 Mappings:
-  AWSInstanceType2Arch:
-    t1.micro:
-      Arch: HVM64
-    t2.nano:
-      Arch: HVM64
-    t2.micro:
-      Arch: HVM64
-    t2.small:
-      Arch: HVM64
-    t2.medium:
-      Arch: HVM64
-    t2.large:
-      Arch: HVM64
-    m1.small:
-      Arch: HVM64
-    m1.medium:
-      Arch: HVM64
-    m1.large:
-      Arch: HVM64
-    m1.xlarge:
-      Arch: HVM64
-    m2.xlarge:
-      Arch: HVM64
-    m2.2xlarge:
-      Arch: HVM64
-    m2.4xlarge:
-      Arch: HVM64
-    m3.medium:
-      Arch: HVM64
-    m3.large:
-      Arch: HVM64
-    m3.xlarge:
-      Arch: HVM64
-    m3.2xlarge:
-      Arch: HVM64
-    m4.large:
-      Arch: HVM64
-    m4.xlarge:
-      Arch: HVM64
-    m4.2xlarge:
-      Arch: HVM64
-    m4.4xlarge:
-      Arch: HVM64
-    m4.10xlarge:
-      Arch: HVM64
-    c1.medium:
-      Arch: HVM64
-    c1.xlarge:
-      Arch: HVM64
-    c3.large:
-      Arch: HVM64
-    c3.xlarge:
-      Arch: HVM64
-    c3.2xlarge:
-      Arch: HVM64
-    c3.4xlarge:
-      Arch: HVM64
-    c3.8xlarge:
-      Arch: HVM64
-    c4.large:
-      Arch: HVM64
-    c4.xlarge:
-      Arch: HVM64
-    c4.2xlarge:
-      Arch: HVM64
-    c4.4xlarge:
-      Arch: HVM64
-    c4.8xlarge:
-      Arch: HVM64
-    g2.2xlarge:
-      Arch: HVMG2
-    g2.8xlarge:
-      Arch: HVMG2
-    r3.large:
-      Arch: HVM64
-    r3.xlarge:
-      Arch: HVM64
-    r3.2xlarge:
-      Arch: HVM64
-    r3.4xlarge:
-      Arch: HVM64
-    r3.8xlarge:
-      Arch: HVM64
-    i2.xlarge:
-      Arch: HVM64
-    i2.2xlarge:
-      Arch: HVM64
-    i2.4xlarge:
-      Arch: HVM64
-    i2.8xlarge:
-      Arch: HVM64
-    d2.xlarge:
-      Arch: HVM64
-    d2.2xlarge:
-      Arch: HVM64
-    d2.4xlarge:
-      Arch: HVM64
-    d2.8xlarge:
-      Arch: HVM64
-    hi1.4xlarge:
-      Arch: HVM64
-    hs1.8xlarge:
-      Arch: HVM64
-    cr1.8xlarge:
-      Arch: HVM64
-    cc2.8xlarge:
-      Arch: HVM64
-  AWSInstanceType2NATArch:
-    t1.micro:
-      Arch: NATHVM64
-    t2.nano:
-      Arch: NATHVM64
-    t2.micro:
-      Arch: NATHVM64
-    t2.small:
-      Arch: NATHVM64
-    t2.medium:
-      Arch: NATHVM64
-    t2.large:
-      Arch: NATHVM64
-    m1.small:
-      Arch: NATHVM64
-    m1.medium:
-      Arch: NATHVM64
-    m1.large:
-      Arch: NATHVM64
-    m1.xlarge:
-      Arch: NATHVM64
-    m2.xlarge:
-      Arch: NATHVM64
-    m2.2xlarge:
-      Arch: NATHVM64
-    m2.4xlarge:
-      Arch: NATHVM64
-    m3.medium:
-      Arch: NATHVM64
-    m3.large:
-      Arch: NATHVM64
-    m3.xlarge:
-      Arch: NATHVM64
-    m3.2xlarge:
-      Arch: NATHVM64
-    m4.large:
-      Arch: NATHVM64
-    m4.xlarge:
-      Arch: NATHVM64
-    m4.2xlarge:
-      Arch: NATHVM64
-    m4.4xlarge:
-      Arch: NATHVM64
-    m4.10xlarge:
-      Arch: NATHVM64
-    c1.medium:
-      Arch: NATHVM64
-    c1.xlarge:
-      Arch: NATHVM64
-    c3.large:
-      Arch: NATHVM64
-    c3.xlarge:
-      Arch: NATHVM64
-    c3.2xlarge:
-      Arch: NATHVM64
-    c3.4xlarge:
-      Arch: NATHVM64
-    c3.8xlarge:
-      Arch: NATHVM64
-    c4.large:
-      Arch: NATHVM64
-    c4.xlarge:
-      Arch: NATHVM64
-    c4.2xlarge:
-      Arch: NATHVM64
-    c4.4xlarge:
-      Arch: NATHVM64
-    c4.8xlarge:
-      Arch: NATHVM64
-    g2.2xlarge:
-      Arch: NATHVMG2
-    g2.8xlarge:
-      Arch: NATHVMG2
-    r3.large:
-      Arch: NATHVM64
-    r3.xlarge:
-      Arch: NATHVM64
-    r3.2xlarge:
-      Arch: NATHVM64
-    r3.4xlarge:
-      Arch: NATHVM64
-    r3.8xlarge:
-      Arch: NATHVM64
-    i2.xlarge:
-      Arch: NATHVM64
-    i2.2xlarge:
-      Arch: NATHVM64
-    i2.4xlarge:
-      Arch: NATHVM64
-    i2.8xlarge:
-      Arch: NATHVM64
-    d2.xlarge:
-      Arch: NATHVM64
-    d2.2xlarge:
-      Arch: NATHVM64
-    d2.4xlarge:
-      Arch: NATHVM64
-    d2.8xlarge:
-      Arch: NATHVM64
-    hi1.4xlarge:
-      Arch: NATHVM64
-    hs1.8xlarge:
-      Arch: NATHVM64
-    cr1.8xlarge:
-      Arch: NATHVM64
-    cc2.8xlarge:
-      Arch: NATHVM64
-  AWSRegionArch2AMI:
-    af-south-1:
-      HVM64: ami-064cc455f8a1ef504
-      HVMG2: NOT_SUPPORTED
-    ap-east-1:
-      HVM64: ami-f85b1989
-      HVMG2: NOT_SUPPORTED
-    ap-northeast-1:
-      HVM64: ami-0b2c2a754d5b4da22
-      HVMG2: ami-09d0e0e099ecabba2
-    ap-northeast-2:
-      HVM64: ami-0493ab99920f410fc
-      HVMG2: NOT_SUPPORTED
-    ap-northeast-3:
-      HVM64: ami-01344f6f63a4decc1
-      HVMG2: NOT_SUPPORTED
-    ap-south-1:
-      HVM64: ami-03cfb5e1fb4fac428
-      HVMG2: ami-0244c1d42815af84a
-    ap-southeast-1:
-      HVM64: ami-0ba35dc9caf73d1c7
-      HVMG2: ami-0e46ce0d6a87dc979
-    ap-southeast-2:
-      HVM64: ami-0ae99b503e8694028
-      HVMG2: ami-0c0ab057a101d8ff2
-    ca-central-1:
-      HVM64: ami-0803e21a2ec22f953
-      HVMG2: NOT_SUPPORTED
-    cn-north-1:
-      HVM64: ami-07a3f215cc90c889c
-      HVMG2: NOT_SUPPORTED
-    cn-northwest-1:
-      HVM64: ami-0a3b3b10f714a0ff4
-      HVMG2: NOT_SUPPORTED
-    eu-central-1:
-      HVM64: ami-0474863011a7d1541
-      HVMG2: ami-0aa1822e3eb913a11
-    eu-north-1:
-      HVM64: ami-0de4b8910494dba0f
-      HVMG2: ami-32d55b4c
-    eu-south-1:
-      HVM64: ami-08427144fe9ebdef6
-      HVMG2: NOT_SUPPORTED
-    eu-west-1:
-      HVM64: ami-015232c01a82b847b
-      HVMG2: ami-0d5299b1c6112c3c7
-    eu-west-2:
-      HVM64: ami-0765d48d7e15beb93
-      HVMG2: NOT_SUPPORTED
-    eu-west-3:
-      HVM64: ami-0caf07637eda19d9c
-      HVMG2: NOT_SUPPORTED
-    me-south-1:
-      HVM64: ami-0744743d80915b497
-      HVMG2: NOT_SUPPORTED
-    sa-east-1:
-      HVM64: ami-0a52e8a6018e92bb0
-      HVMG2: NOT_SUPPORTED
-    us-east-1:
-      HVM64: ami-032930428bf1abbff
-      HVMG2: ami-0aeb704d503081ea6
-    us-east-2:
-      HVM64: ami-027cab9a7bf0155df
-      HVMG2: NOT_SUPPORTED
-    us-west-1:
-      HVM64: ami-088c153f74339f34c
-      HVMG2: ami-0a7fc72dc0e51aa77
-    us-west-2:
-      HVM64: ami-01fee56b22f308154
-      HVMG2: ami-0fe84a5b4563d8f27
+  bootstrap:
+    amazon:
+      warmebs: 'echo ''ACTION: Performing EBS Warming'' && dd if=/dev/xvda of=/dev/xvda
+        conv=notrunc bs=1M status=progress'
+      patch: 'echo ''ACTION: Patching'' && yum update -y --exclude=kernel*'
+      installpackages: 'echo ''ACTION: Installing Software Packages'' && yum install
+        -y curl wget mlocate ca-certificates openssl vim'
+    centos6:
+      warmebs: 'echo ''ACTION: Performing EBS Warming'' && dd if=/dev/xvda of=/dev/xvda
+        conv=notrunc bs=1M'
+      patch: 'echo ''ACTION: Patching'' && yum update -y --exclude=kernel*'
+      installpackages: 'echo ''ACTION: Installing Software Packages'' && yum install
+        -y curl wget mlocate ca-certificates openssl vim'
+    centos7:
+      warmebs: 'echo ''ACTION: Performing EBS Warming'' && dd if=/dev/xvda of=/dev/xvda
+        conv=notrunc bs=1M status=progress'
+      patch: 'echo ''ACTION: Patching'' && yum update -y --exclude=kernel*'
+      installpackages: 'echo ''ACTION: Installing Software Packages'' && yum install
+        -y curl wget mlocate ca-certificates openssl vim'
+    rhel6:
+      warmebs: 'echo ''ACTION: Performing EBS Warming'' && dd if=/dev/xvda of=/dev/xvda
+        conv=notrunc bs=1M'
+      patch: 'echo ''ACTION: Patching'' && yum update -y --exclude=kernel*'
+      installpackages: 'echo ''ACTION: Installing Software Packages'' && yum install
+        -y curl wget mlocate ca-certificates openssl vim'
+    rhel7:
+      warmebs: 'echo ''ACTION: Performing EBS Warming'' && dd if=/dev/xvda of=/dev/xvda
+        conv=notrunc bs=1M status=progress'
+      patch: 'echo ''ACTION: Patching'' && yum update -y --exclude=kernel*'
+      installpackages: 'echo ''ACTION: Installing Software Packages'' && yum install
+        -y curl wget mlocate ca-certificates openssl vim'
+    ubuntu:
+      warmebs: 'echo ''ACTION: Performing EBS Warming'' && dd if=/dev/xvda of=/dev/xvda
+        conv=notrunc bs=1M status=progress'
+      patch: 'echo ''ACTION: Patching'' && apt-mark hold linux-image-generic linux-headers-generic
+        && apt-get update && sleep 1 && apt-get upgrade -y && apt-mark unhold linux-image-generic
+        linux-headers-generic'
+      installpackages: 'echo ''ACTION: Installing Software Packages'' && apt-get update
+        && sleep 1 && apt-get install -y curl wget vim ca-certificates openssl htop'
+    windows:
+      warmebs: 'echo ''ACTION: Performing EBS Warming'''
+      patch: 'echo ''ACTION: Patching'''
+      installpackages: 'echo ''ACTION: Installing Software Packages'''
+Conditions:
+  ConfigureStickiness:
+    Fn::Equals:
+    - Ref: ElbStickySessions
+    - 'true'
+  EnableSsl:
+    Fn::Equals:
+    - Ref: UseSsl
+    - 'true'
+  DisableSsl:
+    Fn::Equals:
+    - Ref: UseSsl
+    - 'false'
+  DisableSslOrUseBothPorts:
+    Fn::Or:
+    - Fn::Equals:
+      - Ref: UseSsl
+      - 'false'
+    - Fn::Equals:
+      - Ref: ListenOnBothPorts
+      - 'true'
+  UseBothPorts:
+    Fn::Equals:
+    - Ref: ListenOnBothPorts
+    - 'true'
+  ConfigureRoute53:
+    Fn::Equals:
+    - Ref: ConfigureDns
+    - 'true'
+  ConfigureElbLogging:
+    Fn::Equals:
+    - Ref: SetupElbLogging
+    - 'true'
 Resources:
-  ApplicationLoadBalancer:
-    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+  IamRole:
+    Type: AWS::IAM::Role
     Properties:
-      Subnets: !Ref Subnets
-  ALBListener:
-    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+  IamPolicies:
+    Type: AWS::IAM::Policy
     Properties:
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref ALBTargetGroup
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
-      Port: '80'
-      Protocol: HTTP
-  ALBTargetGroup:
-    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+      PolicyName:
+        Fn::Join:
+        - ''
+        - - Ref: AWS::StackName
+          - "-instance-policy"
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:*
+          - ec2:Describe*
+          - elasticloadbalancing:Describe*
+          - autoscaling:Describe*
+          - cloudwatch:*
+          - logs:*
+          - sns:*
+          Resource: "*"
+      Roles:
+      - Ref: IamRole
+  IamInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
     Properties:
-      HealthCheckIntervalSeconds: 10
-      HealthCheckTimeoutSeconds: 5
-      HealthyThresholdCount: 2
-      Port: 80
-      Protocol: HTTP
-      UnhealthyThresholdCount: 5
-      VpcId: !Ref VpcId
-      TargetGroupAttributes:
-        - Key: stickiness.enabled
-          Value: 'true'
-        - Key: stickiness.type
-          Value: lb_cookie
-        - Key: stickiness.lb_cookie.duration_seconds
-          Value: '30'
-  WebServerGroup:
-    Type: 'AWS::AutoScaling::AutoScalingGroup'
+      Path: "/"
+      Roles:
+      - Ref: IamRole
+  InternetToElbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      VPCZoneIdentifier: !Ref Subnets
-      LaunchConfigurationName: !Ref LaunchConfig
-      MinSize: '1'
-      MaxSize: '5'
-      DesiredCapacity: !Ref WebServerCapacity
-      TargetGroupARNs:
-        - !Ref ALBTargetGroup
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT5M
-        Count: !Ref WebServerCapacity
-    UpdatePolicy:
-      AutoScalingRollingUpdate:
-        MinInstancesInService: '1'
-        MaxBatchSize: '1'
-        PauseTime: PT15M
-        WaitOnResourceSignals: 'true'
-  LaunchConfig:
-    Type: 'AWS::AutoScaling::LaunchConfiguration'
-    Metadata:
-      Comment1: Configure the bootstrap helpers to install the Apache Web Server and PHP
-      Comment2: >-
-        The website content is downloaded from the CloudFormationPHPSample.zip
-        file
-      'AWS::CloudFormation::Init':
-        config:
-          packages:
-            yum:
-              httpd: []
-              php: []
-              php-mysql: []
-          files:
-            /var/www/html/index.php:
-              content: !Join 
-                - ''
-                - - |
-                    <html>
-                  - |2
-                      <head>
-                  - |2
-                        <title>AWS CloudFormation PHP Sample</title>
-                  - |2
-                        <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
-                  - |2
-                      </head>
-                  - |2
-                      <body>
-                  - |2
-                        <h1>Welcome to the AWS CloudFormation PHP Sample</h1>
-                  - |2
-                        <p/>
-                  - |2
-                        <?php
-                  - |2
-                          // Print out the current data and tie
-                  - |2
-                          print "The Current Date and Time is: <br/>";
-                  - |2
-                          print date("g:i A l, F j Y.");
-                  - |2
-                        ?>
-                  - |2
-                        <p/>
-                  - |2
-                        <?php
-                  - |2
-                          // Setup a handle for CURL
-                  - |2
-                          $curl_handle=curl_init();
-                  - |2
-                          curl_setopt($curl_handle,CURLOPT_CONNECTTIMEOUT,2);
-                  - |2
-                          curl_setopt($curl_handle,CURLOPT_RETURNTRANSFER,1);
-                  - |2
-                          // Get the hostname of the intance from the instance metadata
-                  - |2
-                          curl_setopt($curl_handle,CURLOPT_URL,'http://169.254.169.254/latest/meta-data/public-hostname');
-                  - |2
-                          $hostname = curl_exec($curl_handle);
-                  - |2
-                          if (empty($hostname))
-                  - |2
-                          {
-                  - |2
-                            print "Sorry, for some reason, we got no hostname back <br />";
-                  - |2
-                          }
-                  - |2
-                          else
-                  - |2
-                          {
-                  - |2
-                            print "Server = " . $hostname . "<br />";
-                  - |2
-                          }
-                  - |2
-                          // Get the instance-id of the intance from the instance metadata
-                  - |2
-                          curl_setopt($curl_handle,CURLOPT_URL,'http://169.254.169.254/latest/meta-data/instance-id');
-                  - |2
-                          $instanceid = curl_exec($curl_handle);
-                  - |2
-                          if (empty($instanceid))
-                  - |2
-                          {
-                  - |2
-                            print "Sorry, for some reason, we got no instance id back <br />";
-                  - |2
-                          }
-                  - |2
-                          else
-                  - |2
-                          {
-                  - |2
-                            print "EC2 instance-id = " . $instanceid . "<br />";
-                  - |2
-                          }
-                  - '      $Database   = "'
-                  - !GetAtt 
-                    - MySQLDatabase
-                    - Endpoint.Address
-                  - |
-                    ";
-                  - '      $DBUser     = "'
-                  - !Ref DBUser
-                  - |
-                    ";
-                  - '      $DBPassword = "'
-                  - !Ref DBPassword
-                  - |
-                    ";
-                  - |2
-                          print "Database = " . $Database . "<br />";
-                  - |2
-                          $dbconnection = mysql_connect($Database, $DBUser, $DBPassword)
-                  - |2
-                                          or die("Could not connect: " . mysql_error());
-                  - |2
-                          print ("Connected to $Database successfully");
-                  - |2
-                          mysql_close($dbconnection);
-                  - |2
-                        ?>
-                  - |2
-                        <h2>PHP Information</h2>
-                  - |2
-                        <p/>
-                  - |2
-                        <?php
-                  - |2
-                          phpinfo();
-                  - |2
-                        ?>
-                  - |2
-                      </body>
-                  - |
-                    </html>
-              mode: '000600'
-              owner: apache
-              group: apache
-            /etc/cfn/cfn-hup.conf:
-              content: !Join 
-                - ''
-                - - |
-                    [main]
-                  - stack=
-                  - !Ref 'AWS::StackId'
-                  - |+
-
-                  - region=
-                  - !Ref 'AWS::Region'
-                  - |+
-
-              mode: '000400'
-              owner: root
-              group: root
-            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
-              content: !Join 
-                - ''
-                - - |
-                    [cfn-auto-reloader-hook]
-                  - |
-                    triggers=post.update
-                  - >
-                    path=Resources.LaunchConfig.Metadata.AWS::CloudFormation::Init
-                  - 'action=/opt/aws/bin/cfn-init -v '
-                  - '         --stack '
-                  - !Ref 'AWS::StackName'
-                  - '         --resource LaunchConfig '
-                  - '         --region '
-                  - !Ref 'AWS::Region'
-                  - |+
-
-                  - |
-                    runas=root
-              mode: '000400'
-              owner: root
-              group: root
-          services:
-            sysvinit:
-              httpd:
-                enabled: 'true'
-                ensureRunning: 'true'
-              cfn-hup:
-                enabled: 'true'
-                ensureRunning: 'true'
-                files:
-                  - /etc/cfn/cfn-hup.conf
-                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+      GroupDescription: Web to ELB Access
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Join:
+          - ''
+          - - Ref: AWS::StackName
+            - "-internet-to-elb"
+      - Key: Owner
+        Value:
+          Ref: Owner
+      - Key: Project
+        Value:
+          Ref: Project
+      - Key: DeleteAfter
+        Value:
+          Ref: DeleteAfter
+      SecurityGroupIngress:
+        Fn::If:
+        - DisableSsl
+        - - IpProtocol: tcp
+            FromPort:
+              Ref: ElbHttpListeningPort
+            ToPort:
+              Ref: ElbHttpListeningPort
+            CidrIp: 0.0.0.0/0
+        - Fn::If:
+          - EnableSsl
+          - - IpProtocol: tcp
+              FromPort:
+                Ref: ElbHttpsListeningPort
+              ToPort:
+                Ref: ElbHttpsListeningPort
+              CidrIp: 0.0.0.0/0
+          - Fn::If:
+            - UseBothPorts
+            - - IpProtocol: tcp
+                FromPort:
+                  Ref: ElbHttpListeningPort
+                ToPort:
+                  Ref: ElbHttpListeningPort
+                CidrIp: 0.0.0.0/0
+              - IpProtocol: tcp
+                FromPort:
+                  Ref: ElbHttpsListeningPort
+                ToPort:
+                  Ref: ElbHttpsListeningPort
+                CidrIp: 0.0.0.0/0
+            - - IpProtocol: tcp
+                FromPort:
+                  Ref: ElbHttpListeningPort
+                ToPort:
+                  Ref: ElbHttpListeningPort
+                CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+  InstanceToElbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      ImageId: !FindInMap 
-        - AWSRegionArch2AMI
-        - !Ref 'AWS::Region'
-        - !FindInMap 
-          - AWSInstanceType2Arch
-          - !Ref InstanceType
-          - Arch
-      InstanceType: !Ref InstanceType
+      GroupDescription: ELB to Instance Access in VPC
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Join:
+          - ''
+          - - Ref: AWS::StackName
+            - "-elb-to-instance"
+      - Key: Owner
+        Value:
+          Ref: Owner
+      - Key: Project
+        Value:
+          Ref: Project
+      - Key: DeleteAfter
+        Value:
+          Ref: DeleteAfter
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort:
+          Ref: InstanceHttpListeningPort
+        ToPort:
+          Ref: InstanceHttpListeningPort
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+  ElasticLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    DependsOn:
+    - InstanceToElbSecurityGroup
+    - InternetToElbSecurityGroup
+    Properties:
+      LBCookieStickinessPolicy:
+        Fn::If:
+        - ConfigureStickiness
+        - - CookieExpirationPeriod:
+              Ref: CookieExpirationPeriod
+            PolicyName:
+              Fn::Join:
+              - ''
+              - - Ref: AWS::StackName
+                - "-elbcookie"
+        - Ref: AWS::NoValue
+      Subnets:
+      - Ref: PublicSubnet1
+      - Ref: PublicSubnet2
+      - Ref: PublicSubnet3
+      ConnectionDrainingPolicy:
+        Enabled: true
+        Timeout: 120
+      ConnectionSettings:
+        IdleTimeout: 90
+      CrossZone: 'true'
       SecurityGroups:
-        - !Ref WebServerSecurityGroup
-      KeyName: !Ref KeyName
-      UserData: !Base64 
-        'Fn::Join':
+      - Ref: InstanceToElbSecurityGroup
+      - Ref: InternetToElbSecurityGroup
+      Listeners:
+        Fn::If:
+        - DisableSsl
+        - - LoadBalancerPort:
+              Ref: ElbHttpListeningPort
+            InstancePort:
+              Ref: InstanceHttpListeningPort
+            Protocol: HTTP
+        - Fn::If:
+          - UseBothPorts
+          - - LoadBalancerPort:
+                Ref: ElbHttpListeningPort
+              InstancePort:
+                Ref: InstanceHttpListeningPort
+              Protocol: HTTP
+            - SSLCertificateId:
+                Ref: ElbSslCertArn
+              LoadBalancerPort:
+                Ref: ElbHttpsListeningPort
+              InstancePort:
+                Ref: InstanceHttpListeningPort
+              Protocol: HTTPS
+              PolicyNames:
+              - Fn::Join:
+                - ''
+                - - Ref: AWS::StackName
+                  - "-elbcookie"
+          - Fn::If:
+            - EnableSsl
+            - - SSLCertificateId:
+                  Ref: ElbSslCertArn
+                LoadBalancerPort:
+                  Ref: ElbHttpsListeningPort
+                InstancePort:
+                  Ref: InstanceHttpListeningPort
+                Protocol: HTTPS
+                PolicyNames:
+                - Fn::Join:
+                  - ''
+                  - - Ref: AWS::StackName
+                    - "-elbcookie"
+            - - LoadBalancerPort:
+                  Ref: ElbHttpListeningPort
+                InstancePort:
+                  Ref: InstanceHttpListeningPort
+                Protocol: HTTP
+      LoadBalancerName:
+        Ref: AWS::StackName
+      HealthCheck:
+        Target:
+          Fn::Join:
+          - ''
+          - - 'TCP:'
+            - Ref: InstanceHttpListeningPort
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '30'
+        Timeout: '5'
+      AccessLoggingPolicy:
+        Fn::If:
+        - ConfigureElbLogging
+        - S3BucketName:
+            Ref: S3LoggingBucket
+          S3BucketPrefix: Logs
+          Enabled: 'true'
+          EmitInterval: '60'
+        - Ref: AWS::NoValue
+      Tags:
+      - Key: Name
+        Value:
+          Ref: AWS::StackName
+      - Key: Owner
+        Value:
+          Ref: Owner
+      - Key: Project
+        Value:
+          Ref: Project
+      - Key: DeleteAfter
+        Value:
+          Ref: DeleteAfter
+  ElbDnsCname:
+    Condition: ConfigureRoute53
+    Type: AWS::Route53::RecordSet
+    DependsOn: ElasticLoadBalancer
+    Properties:
+      HostedZoneName:
+        Fn::Join:
+        - ''
+        - - Ref: R53HostedZoneName
+          - "."
+      Comment: CNAME Redirect to the ELB
+      Name:
+        Fn::Join:
+        - ''
+        - - Ref: Route53ElbAlias
+          - "."
+      Type: CNAME
+      TTL: '300'
+      ResourceRecords:
+      - Fn::GetAtt:
+        - ElasticLoadBalancer
+        - DNSName
+  InboundPublicNetworkAclEntryHttpToElb:
+    Condition: DisableSslOrUseBothPorts
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId:
+        Ref: PublicNetworkAcl
+      RuleNumber:
+        Ref: AllowHttpToElbRuleNumber
+      Protocol: '6'
+      RuleAction: allow
+      Egress: 'false'
+      CidrBlock: 0.0.0.0/0
+      PortRange:
+        From:
+          Ref: ElbHttpListeningPort
+        To:
+          Ref: ElbHttpListeningPort
+  InboundPublicNetworkAclEntryHttpsToElb:
+    Condition: EnableSsl
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId:
+        Ref: PublicNetworkAcl
+      RuleNumber:
+        Ref: AllowHttpsToElbRuleNumber
+      Protocol: '6'
+      RuleAction: allow
+      Egress: 'false'
+      CidrBlock: 0.0.0.0/0
+      PortRange:
+        From:
+          Ref: ElbHttpsListeningPort
+        To:
+          Ref: ElbHttpsListeningPort
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    DependsOn:
+    - InstanceToElbSecurityGroup
+    - IamInstanceProfile
+    Properties:
+      AssociatePublicIpAddress: 'false'
+      IamInstanceProfile:
+        Ref: IamInstanceProfile
+      InstanceType:
+        Ref: InstanceType
+      SecurityGroups:
+      - Ref: InstanceToElbSecurityGroup
+      - Ref: RDSAccessSecurityGroup
+      - Ref: InternalAccessSecurityGroup
+      - Ref: RemoteSecurityGroup
+      ImageId:
+        Ref: AMI
+      KeyName:
+        Ref: Ec2KeyPair
+      BlockDeviceMappings:
+      - DeviceName: "/dev/sda1"
+        Ebs:
+          DeleteOnTermination: 'true'
+          VolumeType: gp2
+      UserData:
+        Fn::Base64:
+          Fn::Join:
           - ''
           - - |
-              #!/bin/bash -xe
-            - |
-              yum update -y aws-cfn-bootstrap
-            - |
-              # Install the files and packages from the metadata
-            - '/opt/aws/bin/cfn-init -v '
-            - '         --stack '
-            - !Ref 'AWS::StackName'
-            - '         --resource LaunchConfig '
-            - '         --region '
-            - !Ref 'AWS::Region'
-            - |+
-
-            - |
-              # Signal the status from cfn-init
-            - '/opt/aws/bin/cfn-signal -e $? '
-            - '         --stack '
-            - !Ref 'AWS::StackName'
-            - '         --resource WebServerGroup '
-            - '         --region '
-            - !Ref 'AWS::Region'
-            - |+
-
-  WebServerSecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
+              #!/bin/bash
+            - Fn::FindInMap:
+              - bootstrap
+              - Ref: OsType
+              - warmebs
+            - |2+
+            - Fn::FindInMap:
+              - bootstrap
+              - Ref: OsType
+              - patch
+            - |2+
+            - Fn::FindInMap:
+              - bootstrap
+              - Ref: OsType
+              - installpackages
+            - |2+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+    - LaunchConfiguration
+    - ElasticLoadBalancer
     Properties:
-      GroupDescription: Enable HTTP access via port 80 locked down to the ELB and SSH access
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: '80'
-          ToPort: '80'
-          SourceSecurityGroupId: !Select 
-            - 0
-            - !GetAtt 
-              - ApplicationLoadBalancer
-              - SecurityGroups
-        - IpProtocol: tcp
-          FromPort: '22'
-          ToPort: '22'
-          CidrIp: !Ref SSHLocation
-      VpcId: !Ref VpcId
-  DBEC2SecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
+      LaunchConfigurationName:
+        Ref: LaunchConfiguration
+      MinSize:
+        Ref: MinAutoScaleCount
+      MaxSize:
+        Ref: MaxAutoScaleCount
+      DesiredCapacity:
+        Ref: MinAutoScaleCount
+      HealthCheckType: EC2
+      LoadBalancerNames:
+      - Ref: ElasticLoadBalancer
+      MetricsCollection:
+      - Granularity: 1Minute
+        Metrics:
+        - GroupMinSize
+        - GroupMaxSize
+      NotificationConfigurations:
+      - TopicARN:
+          Ref: AsgSnsTopicArn
+        NotificationTypes:
+        - autoscaling:EC2_INSTANCE_LAUNCH
+        - autoscaling:EC2_INSTANCE_LAUNCH_ERROR
+        - autoscaling:EC2_INSTANCE_TERMINATE
+        - autoscaling:EC2_INSTANCE_TERMINATE_ERROR
+      VPCZoneIdentifier:
+      - Ref: PrivateSubnet1
+      - Ref: PrivateSubnet2
+      - Ref: PrivateSubnet3
+      Tags:
+      - Key: Name
+        Value:
+          Ref: AWS::StackName
+        PropagateAtLaunch: 'true'
+      - Key: Owner
+        Value:
+          Ref: Owner
+        PropagateAtLaunch: 'true'
+      - Key: Project
+        Value:
+          Ref: Project
+        PropagateAtLaunch: 'true'
+      - Key: DeleteAfter
+        Value:
+          Ref: DeleteAfter
+        PropagateAtLaunch: 'true'
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - AutoScalingGroup
+    - ScaleUpPolicy
     Properties:
-      GroupDescription: Open database for access
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: '3306'
-          ToPort: '3306'
-          SourceSecurityGroupId: !Ref WebServerSecurityGroup
-      VpcId: !Ref VpcId
-  MySQLDatabase:
-    Type: 'AWS::RDS::DBInstance'
+      AlarmDescription: Scale-up if CPU > 60% for 10 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '60'
+      AlarmActions:
+      - Ref: ScaleUpPolicy
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value:
+          Ref: AutoScalingGroup
+      ComparisonOperator: GreaterThanThreshold
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - AutoScalingGroup
+    - ScaleDownPolicy
     Properties:
-      Engine: MySQL
-      DBName: !Ref DBName
-      MultiAZ: !Ref MultiAZDatabase
-      MasterUsername: !Ref DBUser
-      MasterUserPassword: !Ref DBPassword
-      DBInstanceClass: !Ref DBInstanceClass
-      AllocatedStorage: !Ref DBAllocatedStorage
-      VPCSecurityGroups:
-        - !GetAtt 
-          - DBEC2SecurityGroup
-          - GroupId
+      AlarmDescription: Scale-down if CPU < 30% for 10 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '30'
+      AlarmActions:
+      - Ref: ScaleDownPolicy
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value:
+          Ref: AutoScalingGroup
+      ComparisonOperator: LessThanThreshold
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    DependsOn:
+    - AutoScalingGroup
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName:
+        Ref: AutoScalingGroup
+      Cooldown: 300
+      ScalingAdjustment: '1'
+  ScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    DependsOn:
+    - AutoScalingGroup
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName:
+        Ref: AutoScalingGroup
+      Cooldown: 1800
+      ScalingAdjustment: "-1"
+  S3LoggingBucket:
+    Condition: ConfigureElbLogging
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Join:
+          - ''
+          - - Ref: AWS::StackName
+            - "-logs"
+      - Key: Owner
+        Value:
+          Ref: Owner
+      - Key: Project
+        Value:
+          Ref: Project
+      - Key: DeleteAfter
+        Value:
+          Ref: DeleteAfter
+  S3LoggingBucketPolicy:
+    Condition: ConfigureElbLogging
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: S3LoggingBucket
+      PolicyDocument:
+        Version: '2008-10-17'
+        Statement:
+        - Sid: ELBAccessLogs20130930
+          Effect: Allow
+          Resource:
+            Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: S3LoggingBucket
+              - "/"
+              - Logs
+              - "/AWSLogs/"
+              - Ref: AWS::AccountId
+              - "/*"
+          Principal: "*"
+          Action:
+          - s3:PutObject
 Outputs:
-  WebsiteURL:
-    Description: URL for newly created LAMP stack
-    Value: !Join 
+  Owner:
+    Description: Team or Individual that Owns this Formation.
+    Value:
+      Ref: Owner
+  Project:
+    Description: The project name.
+    Value:
+      Ref: Project
+  DeleteAfter:
+    Description: It is ok to delete the Formation after this date.
+    Value:
+      Ref: DeleteAfter
+  MinAutoScaleCount:
+    Description: Minimum Instance Count.
+    Value:
+      Ref: MinAutoScaleCount
+  MaxAutoScaleCount:
+    Description: Maximum Instance Count.
+    Value:
+      Ref: MaxAutoScaleCount
+  AsgSnsTopicArn:
+    Description: ASG Alerts SNS Topic ARN Used.
+    Value:
+      Ref: AsgSnsTopicArn
+  AMI:
+    Description: AMI Used.
+    Value:
+      Ref: AMI
+  OsType:
+    Description: OS Type Selected.
+    Value:
+      Ref: OsType
+  InstanceType:
+    Description: Instance Type Used.
+    Value:
+      Ref: InstanceType
+  KeyPairLoaded:
+    Description: Key Pair Used.
+    Value:
+      Ref: Ec2KeyPair
+  InstanceHttpListeningPort:
+    Description: Instance HTTP Listening Port.
+    Value:
+      Ref: InstanceHttpListeningPort
+  InternalAccessSecurityGroup:
+    Description: Instance to Instance Access Security Group Selected.
+    Value:
+      Ref: InternalAccessSecurityGroup
+  RemoteSecurityGroup:
+    Description: Remote to Instance Access Security Group Selected.
+    Value:
+      Ref: RemoteSecurityGroup
+  RDSAccessSecurityGroup:
+    Description: RDS to Instance Access Security Group Selected.
+    Value:
+      Ref: RDSAccessSecurityGroup
+  IAMRole:
+    Description: IAM Instance Profile Role Created.
+    Value:
+      Ref: IamRole
+  VPC:
+    Description: VPC Used.
+    Value:
+      Ref: VPC
+  PublicSubnets:
+    Description: Public Subnets ELB Deployed to.
+    Value:
+      Fn::Join:
       - ''
-      - - 'http://'
-        - !GetAtt 
-          - ApplicationLoadBalancer
-          - DNSName
+      - - 'AZ1: '
+        - Ref: PublicSubnet1
+        - ", "
+        - 'AZ2: '
+        - Ref: PublicSubnet2
+        - ", "
+        - 'AZ3: '
+        - Ref: PublicSubnet3
+  PrivateSubnets:
+    Description: Private Subnets Webapp ASG Deployed to.
+    Value:
+      Fn::Join:
+      - ''
+      - - 'AZ1: '
+        - Ref: PrivateSubnet1
+        - ", "
+        - 'AZ2: '
+        - Ref: PrivateSubnet2
+        - ", "
+        - 'AZ3: '
+        - Ref: PrivateSubnet3
+  PublicNetworkAcl:
+    Description: Public Network ACL Used.
+    Value:
+      Ref: PublicNetworkAcl
+  ConfigureDns:
+    Description: Configure Route 53 DNS Option.
+    Value:
+      Ref: ConfigureDns
+  R53HostedZoneName:
+    Condition: ConfigureRoute53
+    Description: Route 53 Zone Updated.
+    Value:
+      Ref: R53HostedZoneName
+  Route53ElbAlias:
+    Condition: ConfigureRoute53
+    Description: Route 53 DNS Alias Created and Added to ELB.
+    Value:
+      Ref: Route53ElbAlias
+  ElbDNS:
+    Condition: ConfigureRoute53
+    Description: Route 53 DNS CName Assigned to ELB.
+    Value:
+      Ref: ElbDnsCname
+  ElbFQDN:
+    Description: FQDN of ELB
+    Value:
+      Ref: ElasticLoadBalancer
+  InternetToElbSecurityGroup:
+    Description: Inernet To ELB Access Security Group.
+    Value:
+      Ref: InternetToElbSecurityGroup
+  InstanceToElbSecurityGroup:
+    Description: Instance To ELB Access Security Group.
+    Value:
+      Ref: InstanceToElbSecurityGroup
+  SetupElbLogging:
+    Description: Configure ELB S3 Bucket Logging Option.
+    Value:
+      Ref: SetupElbLogging
+  S3LoggingBucket:
+    Condition: ConfigureElbLogging
+    Description: Logging S3 Bucket.
+    Value:
+      Ref: S3LoggingBucket
+  AutoScalingGroup:
+    Description: Auto Scaling Group.
+    Value:
+      Ref: AutoScalingGroup
+  ElasticLoadBalancer:
+    Description: Elastic Load Balancer.
+    Value:
+      Ref: ElasticLoadBalancer
+  ElbHttpListeningPort:
+    Condition: DisableSslOrUseBothPorts
+    Description: Elastic Load Balancer HTTP Listening Port.
+    Value:
+      Ref: ElbHttpListeningPort
+  ElbHttpsListeningPort:
+    Condition: EnableSsl
+    Description: Elastic Load Balancer HTTPS Listening Port.
+    Value:
+      Ref: ElbHttpsListeningPort
+  ElbStickySessions:
+    Description: Enable ELB Stickiness Option.
+    Value:
+      Ref: ElbStickySessions
+  CookieExpirationPeriod:
+    Condition: ConfigureStickiness
+    Description: Cookie Expireation Period for ELB Stickiness Option.
+    Value:
+      Ref: CookieExpirationPeriod
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Ownership
+      Parameters:
+      - Owner
+      - Project
+      - DeleteAfter
+    - Label:
+        default: Auto Scale Group Configuration
+      Parameters:
+      - MinAutoScaleCount
+      - MaxAutoScaleCount
+      - AsgSnsTopicArn
+    - Label:
+        default: Instance Settings
+      Parameters:
+      - AMI
+      - OsType
+      - InstanceType
+      - Ec2KeyPair
+      - InstanceHttpListeningPort
+      - InternalAccessSecurityGroup
+      - RemoteSecurityGroup
+      - RDSAccessSecurityGroup
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - VPC
+      - PublicSubnet1
+      - PublicSubnet2
+      - PublicSubnet3
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - PrivateSubnet3
+      - PublicNetworkAcl
+    - Label:
+        default: Route 53 DNS Configuration
+      Parameters:
+      - ConfigureDns
+      - R53HostedZoneName
+      - Route53ElbAlias
+    - Label:
+        default: Load Balancer Configuration
+      Parameters:
+      - ElbHttpListeningPort
+      - UseSsl
+      - ElbHttpsListeningPort
+      - ElbSslCertArn
+      - ListenOnBothPorts
+      - SetupElbLogging
+      - ElbStickySessions
+      - CookieExpirationPeriod
+    - Label:
+        default: Network ACL Rule Numbers
+      Parameters:
+      - AllowHttpToElbRuleNumber
+      - AllowHttpsToElbRuleNumber
+    ParameterLabels:
+      Owner:
+        default: Team or Individual Owner
+      DeleteAfter:
+        default: Delete After Date
+      Ec2KeyPair:
+        default: EC2 Keypair
+      InstanceType:
+        default: Instance Type
+      PublicSubnet1:
+        default: Public Subnet 1
+      PublicSubnet2:
+        default: Public Subnet 2
+      PublicSubnet3:
+        default: Public Subnet 3
+      PrivateSubnet1:
+        default: Private Subnet 1
+      PrivateSubnet2:
+        default: Private Subnet 2
+      PrivateSubnet3:
+        default: Private Subnet 3
+      PublicNetworkAcl:
+        default: Public Network ACL
+      InternalAccessSecurityGroup:
+        default: Instance-to-Instance SG
+      RemoteSecurityGroup:
+        default: Remote-to-Instance SG
+      RDSAccessSecurityGroup:
+        default: RDS-to-Instance SG
+      MinAutoScaleCount:
+        default: Minimum Count
+      MaxAutoScaleCount:
+        default: Maximum Count
+      R53HostedZoneName:
+        default: Hosted Zone
+      Route53ElbAlias:
+        default: ELB DNS Alias
+      ElbSslCertArn:
+        default: SSL Cert ARN
+      ElbStickySessions:
+        default: Stickiness
+      AllowHttpToElbRuleNumber:
+        default: HTTP Internet to ELB
+      AllowHttpsToElbRuleNumber:
+        default: HTTPS Internet to ELB
+      InstanceHttpListeningPort:
+        default: Instance HTTP Port
+      ElbHttpListeningPort:
+        default: HTTP Port
+      ElbHttpsListeningPort:
+        default: HTTPS Port
+      UseSsl:
+        default: Use SSL
+      SetupElbLogging:
+        default: Setup Logging
+      CookieExpirationPeriod:
+        default: Cookie Expiration Period
+      ListenOnBothPorts:
+        default: Listen on HTTP & HTTPS
+      AsgSnsTopicArn:
+        default: SNS Topic ARN
+      ConfigureDns:
+        default: Configure DNS
+      OsType:
+        default: OS Type
