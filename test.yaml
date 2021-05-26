@@ -141,16 +141,16 @@ Parameters:
 Resources:
   #ELB (ALB)
   ALBListener:
-  Type: AWS::ElasticLoadBalancingV2::Listener
-  Properties:
-    DefaultActions:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
       - Type: forward
         TargetGroupArn:
           Ref: ALBTargetGroup
-    LoadBalancerArn:
-      Ref: ApplicationLoadBalancer
-    Port: 80
-    Protocol: HTTP
+        LoadBalancerArn:
+          Ref: ApplicationLoadBalancer
+        Port: 80
+        Protocol: HTTP
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -185,10 +185,6 @@ Resources:
       TargetGroupAttributes:
       - Key: deregistration_delay.timeout_seconds
         Value: '20'
-      Targets:
-      - Id:
-          Ref: AmazonLinuxInstance
-        Port: 80
       UnhealthyThresholdCount: 3
       VpcId: !Ref VpcId
       Tags:
