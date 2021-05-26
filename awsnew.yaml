@@ -137,10 +137,6 @@ Resources:
       Subnets: !Ref Subnets
   ALBListener:
     Type: 'AWS::ElasticLoadBalancingV2::Listener'
-      ResourceSignal:
-        Count: 1
-        Timeout: PT5M
-
     Properties:
       DefaultActions:
         - Type: forward
