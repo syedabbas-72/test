@@ -102,7 +102,7 @@ Parameters:
     ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
 
   DBUser:
-    NoEcho: 'true'
+    NoEcho: 'True'
     Description: The database admin account username
     Type: String
     MinLength: '1'
@@ -111,7 +111,7 @@ Parameters:
     ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
 
   DBPassword:
-    NoEcho: 'true'
+    NoEcho: 'True'
     Description: The database admin account password
     Type: String
     MinLength: '1'
@@ -138,8 +138,8 @@ Parameters:
     Description: Multi-AZ master database
     Type: String
     Default: 'false'
-    AllowedValues: ['true', 'false']
-    ConstraintDescription: must be true or false.
+    AllowedValues: ['True', 'false']
+    ConstraintDescription: must be True or false.
 
 Conditions:
   BuildPublicB: !Not [ !Equals [ !Ref NumberOfAZs, 1 ]]  
@@ -150,8 +150,6 @@ Conditions:
   BuildPrivateC: !And [ Condition: BuildPrivateSubnets, Condition: BuildPublicC ]
   BuildNATGateway: !And [ Condition: BuildPrivateSubnets, !Equals [ !Ref NATType, "NAT Gateway" ] ]
   BuildNATInstance: !And [ Condition: BuildPrivateSubnets, !Equals [ !Ref NATType, "EC2 NAT Instance" ] ]
-  Is-EC2-VPC: !Or [ !Equals [ !Ref 'AWS::Region', eu-central-1 ], !Equals [ !Ref 'AWS::Region',cn-north-1 ] ]
-  Is-EC2-Classic: !Not [ { Condition: Is-EC2-VPC } ]
 
 Mappings:
   #  This is the Amazon Linux 2 AMI.  Adjust these values as needed, they can change a few times per year:
@@ -231,8 +229,8 @@ Resources:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.1.0.0/16
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
+      EnableDnsSupport: True
+      EnableDnsHostnames: True
       Tags:
       - Key: Name
         Value: !Sub ${AWS::StackName}-VPC
@@ -421,7 +419,7 @@ Resources:
       NetworkInterfaces:
       - DeviceIndex: '0'
         SubnetId: !Ref PublicSubnetA                                  # Any public subnet is fine
-        AssociatePublicIpAddress: true                                # We will definitely need a public IP address
+        AssociatePublicIpAddress: True                                # We will definitely need a public IP address
         GroupSet: [!Ref NATSecurityGroup]                             # Plug in the security group
       SourceDestCheck: false                                          # NATs don't work if EC2 tries the match source addresses with destinations.
       Tags:
@@ -492,7 +490,7 @@ Resources:
         MinInstancesInService: 1
         MaxBatchSize: 1
         PauseTime: PT15M
-        WaitOnResourceSignals: true
+        WaitOnResourceSignals: True
   LaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     DependsOn: PublicRoute1
@@ -541,11 +539,11 @@ Resources:
           services:
             sysvinit:
               httpd:
-                enabled: true
-                ensureRunning: true
+                enabled: True
+                ensureRunning: True
               cfn-hup:
-                enabled: true
-                ensureRunning: true
+                enabled: True
+                ensureRunning: True
                 files: [/etc/cfn/cfn-hup.conf, /etc/cfn/hooks.d/cfn-auto-reloader.conf]
     Properties:
       KeyName: !Ref 'KeyName'
@@ -554,11 +552,12 @@ Resources:
       NetworkInterfaces:
       - DeviceIndex: '0'
         SubnetId: !Ref PublicSubnetA
-        AssociatePublicIpAddress: true
+        AssociatePublicIpAddress: True
         GroupSet: [!Ref 'InstanceSecurityGroup']
       Tags:
       - Key: Name
         Value: !Sub EC2-${AWS::StackName}
+      DeletionProtection: true
       UserData: !Base64
         Fn::Join:
         - ''
@@ -621,7 +620,7 @@ Resources:
     Type: AWS::ElasticLoadBalancing::LoadBalancer
     Properties:
       AvailabilityZones: !GetAZs ''
-      CrossZone: true
+      CrossZone: True
       Listeners:
       - LoadBalancerPort: '80'
         InstancePort: '80'
@@ -648,22 +647,31 @@ Resources:
         SourceSecurityGroupName: !GetAtt [ElasticLoadBalancer, SourceSecurityGroup.GroupName]
 
   DBEC2SecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Condition: Is-EC2-VPC
-    Properties:
-      GroupDescription: Open database for access
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: '3306'
-        ToPort: '3306'
-        SourceSecurityGroupName: !Ref 'InstanceSecurityGroup'
-  DBSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Condition: Is-EC2-Classic
-    Properties:
-      DBSecurityGroupIngress:
-        EC2SecurityGroupName: !Ref 'InstanceSecurityGroup'
-      GroupDescription: database access
+    Type: "AWS::EC2::SecurityGroup"
+        Properties:
+            GroupDescription: "Database instances security group"
+            VpcId: !Ref VPC
+            SecurityGroupIngress: 
+              - 
+                CidrIp: "*.*.*.*/32"
+                FromPort: 3306
+                IpProtocol: "tcp"
+                ToPort: 3306
+            SecurityGroupEgress: 
+              - 
+                CidrIp: "0.0.0.0/0"
+                IpProtocol: "-1"
+  RDSDBSubnetGroup:
+        Type: "AWS::RDS::DBSubnetGroup"
+        Properties:
+            DBSubnetGroupDescription: "Subnet Group for mySQL database"
+            DBSubnetGroupName: !Sub "${AWS::Region}-aws-database-subnet-group"
+            SubnetIds: 
+              - !Ref PrivateSubnetA
+              - !Ref PrivateSubnetB
+            Tags: 
+              - Key: Name
+                Value: production-db-ap-south
   MasterDB:
     Type: AWS::RDS::DBInstance
     DependsOn: PublicRoute1
@@ -675,16 +683,22 @@ Resources:
       MasterUsername: !Ref 'DBUser'
       MasterUserPassword: !Ref 'DBPassword'
       MultiAZ: !Ref 'DBMultiAZ'
+      StorageType: gp2
       NetworkInterfaces:
       - DeviceIndex: '1'
         SubnetId: !Ref PublicSubnetA
-        AssociatePublicIpAddress: true
+        AssociatePublicIpAddress: True
+      Port: 3306
+      DBSubnetGroupName: !Ref RDSDBSubnetGroup
+      PubliclyAccessible: True
+      VPCSecurityGroups: 
+        - !Ref InstanceSecurityGroup
       Tags:
       - Key: Name
         Value: Master Database
-      VPCSecurityGroups: !If [Is-EC2-VPC, [!GetAtt [DBEC2SecurityGroup, GroupId]], !Ref 'AWS::NoValue']
-      DBSecurityGroups: !If [Is-EC2-Classic, [!Ref 'DBSecurityGroup'], !Ref 'AWS::NoValue']
+    BackupRetentionPeriod: 7
     DeletionPolicy: Snapshot
+    DeletionProtection: true
   ReplicaDB:
     Type: AWS::RDS::DBInstance
     Properties:
@@ -748,9 +762,6 @@ Outputs:
   URL:
     Description: The URL of the website
     Value: !Join ['', ['http://', !GetAtt [ElasticLoadBalancer, DNSName]]]
-  EC2Platform:
-    Description: Platform in which this stack is deployed
-    Value: !If [Is-EC2-VPC, EC2-VPC, EC2-Classic]
   MasterJDBCConnectionString:
     Description: JDBC connection string for the master database
     Value: !Join ['', ['jdbc:mysql://', !GetAtt [MasterDB, Endpoint.Address], ':',
