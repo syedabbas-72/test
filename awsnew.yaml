@@ -31,8 +31,6 @@ Metadata:
       - Label:
           default: "RDS Configuration"
         Parameters:
-          - VPCSecurityGroups
-          - DBSubnetGroupName
           - DBInstanceClass
           - DBAllocatedStorage
           - DBName
@@ -106,13 +104,6 @@ Parameters:
       - 'true'
       - 'false'
     ConstraintDescription: must be either true or false.
-  VPCSecurityGroups:
-    Description: Specifies if the database instance is a multiple Availability Zone deployment.
-    Type: List<AWS::EC2::SecurityGroup::Id>
-    ConstraintDescription: "Please provide valid ids for the security group(s)."
-  DBSubnetGroupName:
-    Description: A DB subnet group to associate with the DB instance. 
-    Type: String
   WebServerCapacity:
     Default: '2'
     Description: The initial number of WebServer instances
@@ -278,13 +269,10 @@ Resources:
       AllocatedStorage: !Ref DBAllocatedStorage
       StorageType: gp2
       PubliclyAccessible: True
-      DBSubnetGroupName: !Ref DBSubnetGroupName
-      VPCSecurityGroups: !Ref VPCSecurityGroups
-      Tags:
-        - Key: Name
-          Value: !Sub
-            - ${AWS::StackName}-${Name}
-            - { Name: MySQL }
+      VPCSecurityGroups:
+        - !GetAtt 
+          - DBEC2SecurityGroup
+          - GroupId
   ReplicaDB:
     Type: AWS::RDS::DBInstance
     Properties:
