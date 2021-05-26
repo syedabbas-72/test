@@ -651,16 +651,10 @@ Resources:
     Properties:
       GroupDescription: "Database instances security group"
       VpcId: !Ref VPC
-      SecurityGroupIngress: 
-        - 
-          CidrIp: "*.*.*.*/32"
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
           FromPort: 3306
-          IpProtocol: "tcp"
           ToPort: 3306
-      SecurityGroupEgress: 
-        - 
-          CidrIp: "0.0.0.0/0"
-          IpProtocol: "-1"
   RDSDBSubnetGroup:
     Type: "AWS::RDS::DBSubnetGroup"
     Properties:
