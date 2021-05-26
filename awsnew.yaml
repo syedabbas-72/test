@@ -132,11 +132,11 @@ Parameters:
 
 Resources:
   ApplicationLoadBalancer:
-    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
     Properties:
       Subnets: !Ref Subnets
   ALBTargetGroup:
-    Type: 'AWS::ElasticLoadBalancing::TargetGroup'
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
     Properties:
       HealthCheckIntervalSeconds: 10
       HealthCheckTimeoutSeconds: 5
