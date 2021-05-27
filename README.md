@@ -1,5 +1,7 @@
 # awsnew.yaml only for Teting
 # cloudfront.yaml not Checked
-# cloudtrail.yaml is Working and published
+# cloudtrail.yaml is Working
 # new_vpc_w_nat_ec2_s3_rds.yaml Errors
-# vpcwith3pub3prtsunet.yaml is Working and published
+# rds.yaml Working
+# test.yaml only for Testing
+# vpcwith3pub3prtsunet.yaml is Working
